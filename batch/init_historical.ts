@@ -147,7 +147,7 @@ async function main() {
     const priceChange = prevClose != null && bar.C ? bar.C - prevClose : null;
     const priceChangePercent = prevClose != null && prevClose > 0 && priceChange != null ? (priceChange / prevClose) * 100 : null;
 
-    sqlStatements.push(`INSERT OR REPLACE INTO daily_quotes (code, date, close, open, high, low, volume, prev_close, price_change, price_change_percent, market_cap, updated_at) VALUES (${escapeSql(code4)}, ${escapeSql(bar.Date)}, ${escapeSql(bar.C)}, ${escapeSql(bar.O)}, ${escapeSql(bar.H)}, ${escapeSql(bar.L)}, ${escapeSql(bar.Vo)}, ${escapeSql(prevClose)}, ${escapeSql(priceChange)}, ${escapeSql(priceChangePercent)}, ${escapeSql(bar.MktCap ?? null)}, ${escapeSql(nowStr)});`);
+    sqlStatements.push(`INSERT OR REPLACE INTO daily_quotes (code, date, close, open, high, low, volume, trading_value, prev_close, price_change, price_change_percent, market_cap, updated_at) VALUES (${escapeSql(code4)}, ${escapeSql(bar.Date)}, ${escapeSql(bar.C)}, ${escapeSql(bar.O)}, ${escapeSql(bar.H)}, ${escapeSql(bar.L)}, ${escapeSql(bar.Vo)}, ${escapeSql(bar.Va ?? (bar.C && bar.Vo ? bar.C * bar.Vo : null))}, ${escapeSql(prevClose)}, ${escapeSql(priceChange)}, ${escapeSql(priceChangePercent)}, ${escapeSql(bar.MktCap ?? null)}, ${escapeSql(nowStr)});`);
   }
 
   // (C) valuations
