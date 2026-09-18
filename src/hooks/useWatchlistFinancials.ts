@@ -322,10 +322,12 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       const beta = betaMap[it.code] ?? null;
 
       // 公式開示から抽出された配当金・配当利回りがあれば最優先で反映
+      // 配当利回りは最新の it.currentPrice に追従させてリアルタイム計算
       const effectiveDps = fin?.dpsAnnual ?? it.dpsAnnual;
-      const effectiveYield = fin?.dividendYield ?? (
-        effectiveDps !== null && it.currentPrice > 0 ? (effectiveDps / it.currentPrice) * 100 : it.dividendYield
-      );
+      const effectiveYield =
+        effectiveDps !== null && it.currentPrice > 0
+          ? Math.round((effectiveDps / it.currentPrice) * 10000) / 100
+          : (fin?.dividendYield ?? it.dividendYield);
 
       return {
         ...it,

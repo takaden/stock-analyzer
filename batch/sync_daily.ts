@@ -72,8 +72,8 @@ async function main() {
     );
     if (!exists) {
       finsByCode[code4].push(f as FinSummary);
-      updatedStockCodes.add(code4);
     }
+    updatedStockCodes.add(code4);
   });
 
   fs.writeFileSync(finsCachePath, JSON.stringify(finsByCode), 'utf-8');
@@ -144,7 +144,7 @@ async function main() {
     ON CONFLICT(code) DO UPDATE SET
       dps_annual = excluded.dps_annual,
       dps_type = excluded.dps_type,
-      dividend_yield = excluded.dividend_yield,
+      dividend_yield = COALESCE(excluded.dividend_yield, calculated_metrics.dividend_yield),
       latest_cfo = excluded.latest_cfo,
       latest_cfi = excluded.latest_cfi,
       latest_fcf = excluded.latest_fcf,

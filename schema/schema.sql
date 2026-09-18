@@ -146,6 +146,6 @@ SELECT
   m.beta_label AS betaLabel,
   m.beta_badge_emoji AS betaBadgeEmoji
 FROM stocks s
-LEFT JOIN daily_quotes q ON s.code = q.code
-LEFT JOIN valuations v ON s.code = v.code
+LEFT JOIN daily_quotes q ON s.code = q.code AND q.date = (SELECT MAX(date) FROM daily_quotes WHERE code = s.code)
+LEFT JOIN valuations v ON s.code = v.code AND v.date = (SELECT MAX(date) FROM valuations WHERE code = s.code)
 LEFT JOIN calculated_metrics m ON s.code = m.code;
