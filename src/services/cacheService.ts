@@ -1,18 +1,21 @@
-import type { StockData, EquityMaster, FinSummary, TopixBar } from '../types/jquants';
+import type { StockData, EquityMaster, FinSummary, TopixBar, BetaAnalysis } from '../types/jquants';
 
 const CACHE_PREFIX = 'jq_stock_v2_';
 const FINS_PREFIX = 'jq_fins_v1_';
+const BETA_PREFIX = 'jq_beta_v1_';
 const API_KEY_STORAGE = 'jq_api_key';
 const MASTER_STORAGE = 'jq_master_all';
 const TOPIX_STORAGE = 'jq_topix_bars';
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12時間有効
 const FINS_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
+const BETA_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
 const MASTER_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
 const TOPIX_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
 
 // --- インメモリキャッシュ (Level 1: 0ms・JSONパースなし) ---
 const memoryStockCache = new Map<string, CacheEntry<StockData>>();
 const memoryFinsCache = new Map<string, CacheEntry<FinSummary[]>>();
+const memoryBetaCache = new Map<string, CacheEntry<BetaAnalysis>>();
 let memoryMasterList: EquityMaster[] | null = null;
 let memoryTopixBars: TopixBar[] | null = null;
 let memoryWatchlist: string[] | null = null;
@@ -103,17 +106,64 @@ export const cacheService = {
   clearAllStockCache(): void {
     memoryStockCache.clear();
     memoryFinsCache.clear();
+    memoryBetaCache.clear();
     memoryMasterList = null;
     memoryTopixBars = null;
     if (typeof localStorage === 'undefined') return;
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith(FINS_PREFIX))) {
+      if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith(FINS_PREFIX) || key.startsWith(BETA_PREFIX))) {
         keysToRemove.push(key);
       }
     }
     keysToRemove.forEach((k) => localStorage.removeItem(k));
+  },
+
+  // ベータ値解析のキャッシュ取得 (メモリ優先 -> localStorage)
+  getBetaAnalysis(code: string): BetaAnalysis | null {
+    // 1. メモリキャッシュ確認
+    const mem = memoryBetaCache.get(code);
+    if (mem) {
+      if (Date.now() - mem.timestamp <= BETA_TTL_MS) {
+        return mem.data;
+      }
+      memoryBetaCache.delete(code);
+    }
+
+    if (typeof localStorage === 'undefined') return null;
+
+    // 2. localStorage から初回読み出し
+    try {
+      const raw = localStorage.getItem(`${BETA_PREFIX}${code}`);
+      if (!raw) return null;
+      const entry: CacheEntry<BetaAnalysis> = JSON.parse(raw);
+      if (Date.now() - entry.timestamp > BETA_TTL_MS) {
+        localStorage.removeItem(`${BETA_PREFIX}${code}`);
+        return null;
+      }
+      memoryBetaCache.set(code, entry);
+      return entry.data;
+    } catch (e) {
+      console.error('Failed to read beta cache', e);
+      return null;
+    }
+  },
+
+  // ベータ値解析の保存 (メモリ & localStorage)
+  setBetaAnalysis(code: string, data: BetaAnalysis): void {
+    const entry: CacheEntry<BetaAnalysis> = {
+      data,
+      timestamp: Date.now(),
+    };
+    memoryBetaCache.set(code, entry);
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(`${BETA_PREFIX}${code}`, JSON.stringify(entry));
+      } catch (e) {
+        console.warn('Failed to save beta cache (storage may be full)', e);
+      }
+    }
   },
 
   // 財務サマリーのキャッシュ取得 (メモリ優先 -> localStorage)
