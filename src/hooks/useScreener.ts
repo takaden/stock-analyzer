@@ -37,7 +37,49 @@ export function useScreener() {
     setLoading(true);
     setError(null);
     try {
-      // 日足・バリュエーションを最新営業日ベースで一括フェッチ（合計わずか2〜3リクエスト）
+      // 1. まず Cloudflare D1 データベース (/api/screener-stocks) からの一括取得を試みる (全銘柄対応・0ms)
+      try {
+        const BASE_URL = (import.meta.env?.BASE_URL || '/').replace(/\/+$/, '');
+        const res = await fetch(`${BASE_URL}/api/screener-stocks`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json && Array.isArray(json.data) && json.data.length > 0) {
+            const list: ScreenerStock[] = json.data.map((item: any) => ({
+              code: item.code,
+              rawCode: item.rawCode,
+              name: item.name,
+              market: item.market,
+              sector: item.sector,
+              scaleCat: item.scaleCat,
+              currentPrice: item.currentPrice,
+              previousClose: item.previousClose,
+              priceChange: item.priceChange,
+              priceChangePercent: item.priceChangePercent,
+              volume: item.volume,
+              marketCap: item.marketCap,
+              dpsAnnual: item.dpsAnnual,
+              dividendYield: item.dividendYield,
+              per: item.per,
+              fwdPer: item.fwdPer,
+              pbr: item.pbr,
+              roe: item.roe,
+              isJpx400: Boolean(item.isJpx400),
+              isTopix100: Boolean(item.isTopix100),
+              isPrime: Boolean(item.isPrime),
+            }));
+            setAllStocks(list);
+            if (json.data[0]?.latestDate) {
+              setLatestDate(json.data[0].latestDate);
+            }
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (d1Err) {
+        console.warn('D1 screener API unavailable, falling back to direct J-Quants fetch:', d1Err);
+      }
+
+      // 2. フォールバック: 日足・バリュエーションを最新営業日ベースで直接フェッチ
       const baseData = await fetchAllScreenerBaseData();
       setLatestDate(baseData.latestDate);
 

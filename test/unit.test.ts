@@ -553,10 +553,32 @@ test('cacheService in-memory caching', async (t) => {
     assert.equal(firstGet, secondGet, 'Subsequent getStock calls must return the identical in-memory reference');
   });
 
+  await t.test('betaAnalysis caching stores and retrieves correctly without needing full stock cache', () => {
+    const mockBeta = {
+      beta1Year: 0.85,
+      beta3Year: 0.82,
+      beta5Year: 0.80,
+      correlation: 0.75,
+      category: 'neutral',
+      label: '市場連動',
+      badgeEmoji: '⚖️',
+      description: 'テスト用ベータ値',
+    } as any;
+
+    cacheService.setBetaAnalysis('6632', mockBeta);
+    const retrieved = cacheService.getBetaAnalysis('6632');
+    assert.ok(retrieved !== null);
+    assert.equal(retrieved.beta1Year, 0.85);
+    assert.equal(retrieved.label, '市場連動');
+    assert.equal(retrieved, mockBeta, 'Must return the identical in-memory reference');
+  });
+
   await t.test('clears in-memory cache upon clearAllStockCache', () => {
     cacheService.setStock('9999', { code: '9999', name: 'Temp' } as any);
+    cacheService.setBetaAnalysis('9999', { beta1Year: 1.0 } as any);
     cacheService.clearAllStockCache();
     assert.equal(cacheService.getStock('9999'), null);
+    assert.equal(cacheService.getBetaAnalysis('9999'), null);
   });
 });
 
@@ -1004,6 +1026,50 @@ test('Cloudflare Pages Functions onRequest (/api/watchlist)', async (t) => {
     assert.equal(json.warning, 'KV_NOT_BOUND');
   });
 });
+
+import { buildCalculatedMetricsRow } from '../batch/lib/metricsCalculator.ts';
+
+test('buildCalculatedMetricsRow (Batch metrics calculation)', async (t) => {
+  await t.test('accurately calculates metrics for 1928 Sekisui House (forecast DPS 145 yen, yield 4.26%)', () => {
+    const mockSekisuiFins = [
+      {
+        DiscDate: '2026-05-20',
+        CurPerType: 'FY',
+        CurFYEn: '2026-01-31',
+        CurPerEn: '2026-01-31',
+        Sales: '3500000000000',
+        OP: '300000000000',
+        NP: '200000000000',
+        CFO: '350000000000',
+        CFI: '-150000000000',
+        ShEq: '1800000000000',
+        TA: '3600000000000',
+        DivAnn: '135.0',
+        FDivAnn: '',
+      },
+      {
+        DiscDate: '2026-09-10',
+        CurPerType: '2Q',
+        CurFYEn: '2027-01-31',
+        DivAnn: '',
+        FDivAnn: '145.0', // 2Q開示の最新通期予想
+      },
+    ];
+
+    const currentPrice = 3403; // 株価 3,403円
+    const row = buildCalculatedMetricsRow('1928', mockSekisuiFins as any, currentPrice);
+
+    assert.equal(row.code, '1928');
+    assert.equal(row.dps_annual, 145);
+    assert.equal(row.dps_type, 'forecast');
+    assert.equal(row.dividend_yield, 4.26); // (145 / 3403) * 100 = 4.2609... => 4.26%
+    assert.equal(row.latest_fcf, 200000); // 350,000 - 150,000 = 200,000百万円 (2000億円)
+    assert.equal(row.fcf_positive_count, 1);
+    assert.equal(row.is_fcf_consistently_positive, 1);
+    assert.equal(row.equity_ratio, 50.0); // 1.8兆 / 3.6兆 = 50%
+  });
+});
+
 
 
 

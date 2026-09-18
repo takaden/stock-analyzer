@@ -11,9 +11,39 @@ export interface FinancialsProgress {
   error: string | null;
 }
 
+// タブ切り替え等でコンポーネントが再マウントされても0msで即時復元できるよう、
+// モジュールスコープに財務指標およびベータ値のキャッシュを保持
+const globalFinancialsCache = new Map<string, WatchlistFinancials>();
+const globalBetaCache = new Map<string, BetaAnalysis>();
+
 export function useWatchlistFinancials(items: WatchlistItem[]) {
-  const [financialsMap, setFinancialsMap] = useState<Record<string, WatchlistFinancials | null>>({});
-  const [betaMap, setBetaMap] = useState<Record<string, BetaAnalysis | null>>({});
+  // 初期レンダリング時からモジュールキャッシュおよび永続キャッシュを反映し、画面のチラつきを防止
+  const [financialsMap, setFinancialsMap] = useState<Record<string, WatchlistFinancials | null>>(() => {
+    const initial: Record<string, WatchlistFinancials | null> = {};
+    for (const it of items) {
+      if (globalFinancialsCache.has(it.code)) {
+        initial[it.code] = globalFinancialsCache.get(it.code)!;
+      }
+    }
+    return initial;
+  });
+
+  const [betaMap, setBetaMap] = useState<Record<string, BetaAnalysis | null>>(() => {
+    const initial: Record<string, BetaAnalysis | null> = {};
+    for (const it of items) {
+      if (globalBetaCache.has(it.code)) {
+        initial[it.code] = globalBetaCache.get(it.code)!;
+      } else {
+        const beta = cacheService.getBetaAnalysis(it.code) || cacheService.getStock(it.code)?.betaAnalysis;
+        if (beta) {
+          globalBetaCache.set(it.code, beta);
+          initial[it.code] = beta;
+        }
+      }
+    }
+    return initial;
+  });
+
   const [progress, setProgress] = useState<FinancialsProgress>({
     current: 0,
     total: 0,
@@ -23,30 +53,131 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
 
   const isCancelledRef = useRef(false);
   const itemsRef = useRef(items);
+  const prevCodesRef = useRef<Set<string>>(new Set(items.map((it) => it.code)));
+  const isInitialMountRef = useRef(true);
 
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
 
+  const currentCodes = useMemo(() => new Set(items.map((it) => it.code)), [items]);
   const itemCodesKey = useMemo(() => items.map((it) => it.code).sort().join(','), [items]);
 
-  const loadFinancials = useCallback(async (forceRefresh = false) => {
+  const loadFinancials = useCallback(async (forceRefresh = false, targetCodes?: string[]) => {
     const currentItems = itemsRef.current;
     if (currentItems.length === 0) {
       setProgress({ current: 0, total: 0, isLoading: false, error: null });
       return;
     }
 
+    // 対象銘柄の絞り込み（指定があればその銘柄のみ、なければ全銘柄）
+    const itemsToProcess = targetCodes
+      ? currentItems.filter((it) => targetCodes.includes(it.code))
+      : currentItems;
+
+    if (itemsToProcess.length === 0) return;
+
+    // 0. Cloudflare D1 から事前計算済み財務指標・ベータ値の一括取得を試みる (待ち時間 0ms)
+    if (!forceRefresh) {
+      try {
+        const BASE_URL = (import.meta.env?.BASE_URL || '/').replace(/\/+$/, '');
+        const codesStr = itemsToProcess.map((it) => it.code).join(',');
+        const res = await fetch(`${BASE_URL}/api/watchlist-metrics?codes=${codesStr}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.data) {
+            Object.entries(json.data).forEach(([code, data]: [string, any]) => {
+              if (data) {
+                globalFinancialsCache.set(code, data);
+                if (data.betaAnalysis) {
+                  globalBetaCache.set(code, data.betaAnalysis);
+                  cacheService.setBetaAnalysis(code, data.betaAnalysis);
+                }
+              }
+            });
+          }
+        }
+      } catch (d1Err) {
+        console.warn('D1 watchlist metrics API unavailable, falling back to local calculation:', d1Err);
+      }
+    }
+
+    // 1. ローカルキャッシュおよびグローバルメモリにあるものを同期的に即座に反映
+    let topixBars = cacheService.getTopixBars();
+    const initialFinsMap: Record<string, WatchlistFinancials | null> = {};
+    const initialBetaMap: Record<string, BetaAnalysis | null> = {};
+    const uncachedItems: WatchlistItem[] = [];
+
+    for (const item of itemsToProcess) {
+      // (A) 財務指標の確認 (グローバルメモリ -> 財務サマリーキャッシュから計算)
+      let fin = !forceRefresh ? (globalFinancialsCache.get(item.code) ?? null) : null;
+      if (!fin && !forceRefresh) {
+        const cachedFins = cacheService.getFinsSummary(item.code);
+        if (cachedFins && cachedFins.length > 0) {
+          fin = calculateWatchlistFinancials(cachedFins, item.currentPrice, item.dpsAnnual);
+          if (fin) {
+            globalFinancialsCache.set(item.code, fin);
+          }
+        }
+      }
+
+      // (B) ベータ値の確認 (グローバルメモリ -> ベータ専用キャッシュ -> 個別銘柄キャッシュ)
+      let beta = !forceRefresh ? (globalBetaCache.get(item.code) ?? null) : null;
+      if (!beta && !forceRefresh) {
+        beta = cacheService.getBetaAnalysis(item.code);
+        if (!beta) {
+          const stockCached = cacheService.getStock(item.code);
+          if (stockCached?.betaAnalysis) {
+            beta = stockCached.betaAnalysis;
+          } else if (stockCached?.historicalBars && topixBars && topixBars.length > 0) {
+            const calculated = calculateBeta(stockCached.historicalBars, topixBars);
+            if (calculated) {
+              beta = calculated;
+              stockCached.betaAnalysis = calculated;
+              cacheService.setStock(item.code, stockCached);
+            }
+          }
+        }
+        if (beta) {
+          globalBetaCache.set(item.code, beta);
+          cacheService.setBetaAnalysis(item.code, beta);
+        }
+      }
+
+      if (fin) initialFinsMap[item.code] = fin;
+      if (beta) initialBetaMap[item.code] = beta;
+
+      if (!fin || !beta) {
+        uncachedItems.push(item);
+      }
+    }
+
+    setFinancialsMap((prev) => ({ ...prev, ...initialFinsMap }));
+    setBetaMap((prev) => ({ ...prev, ...initialBetaMap }));
+
+    // 全てキャッシュから即座に解決できた場合:
+    // プログレスバーを一瞬たりとも表示させずに直ちに完了状態とする
+    if (uncachedItems.length === 0) {
+      setProgress({
+        current: currentItems.length,
+        total: currentItems.length,
+        isLoading: false,
+        error: null,
+      });
+      return;
+    }
+
+    // 未キャッシュ銘柄が存在する場合のみ、プログレスバーをアクティブにして非同期フェッチ開始
     isCancelledRef.current = false;
+    let loadedCount = currentItems.length - uncachedItems.length;
     setProgress({
-      current: 0,
+      current: loadedCount,
       total: currentItems.length,
       isLoading: true,
       error: null,
     });
 
-    // 1. TOPIX 日足データの確保 (未キャッシュならAPIから取得)
-    let topixBars = cacheService.getTopixBars();
+    // TOPIX 日足データの確保 (未キャッシュならAPIから取得)
     if (!topixBars || topixBars.length === 0) {
       try {
         topixBars = await fetchTopixDailyBars(forceRefresh);
@@ -55,59 +186,7 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       }
     }
 
-    let loadedCount = 0;
-
-    // 2. ローカルキャッシュにあるものを同期的に即座に反映
-    const initialFinsMap: Record<string, WatchlistFinancials | null> = {};
-    const initialBetaMap: Record<string, BetaAnalysis | null> = {};
-    const uncachedItems: WatchlistItem[] = [];
-
-    for (const item of currentItems) {
-      const cachedFins = !forceRefresh ? cacheService.getFinsSummary(item.code) : null;
-      const stockCached = !forceRefresh ? cacheService.getStock(item.code) : null;
-
-      let hasFins = false;
-      let hasBeta = false;
-
-      if (cachedFins && cachedFins.length > 0) {
-        initialFinsMap[item.code] = calculateWatchlistFinancials(cachedFins, item.currentPrice, item.dpsAnnual);
-        hasFins = true;
-      }
-
-      if (stockCached?.betaAnalysis) {
-        initialBetaMap[item.code] = stockCached.betaAnalysis;
-        hasBeta = true;
-      } else if (stockCached?.historicalBars && topixBars && topixBars.length > 0) {
-        const calculated = calculateBeta(stockCached.historicalBars, topixBars);
-        if (calculated) {
-          initialBetaMap[item.code] = calculated;
-          stockCached.betaAnalysis = calculated;
-          cacheService.setStock(item.code, stockCached);
-          hasBeta = true;
-        }
-      }
-
-      if (hasFins && hasBeta) {
-        loadedCount++;
-      } else {
-        uncachedItems.push(item);
-      }
-    }
-
-    setFinancialsMap((prev) => ({ ...prev, ...initialFinsMap }));
-    setBetaMap((prev) => ({ ...prev, ...initialBetaMap }));
-    setProgress({
-      current: loadedCount,
-      total: currentItems.length,
-      isLoading: uncachedItems.length > 0,
-      error: null,
-    });
-
-    if (uncachedItems.length === 0) {
-      return;
-    }
-
-    // 3. 未キャッシュ銘柄を順次取得 (財務 ＋ 日足株価)
+    // 2. 未キャッシュ銘柄を順次取得 (財務 ＋ 日足株価)
     for (const item of uncachedItems) {
       if (isCancelledRef.current) break;
 
@@ -115,30 +194,36 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       const rateState = getRateLimitState();
       if (rateState.remainingThisMinute <= 3 && rateState.nextResetSeconds > 0) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(rateState.nextResetSeconds * 1000, 3000)));
+        if (isCancelledRef.current) break;
       }
 
       // (A) 財務サマリーの取得
-      const cachedFins = !forceRefresh ? cacheService.getFinsSummary(item.code) : null;
-      if (!cachedFins || cachedFins.length === 0) {
-        try {
-          const fins = await fetchFinsSummary(item.code, forceRefresh);
-          if (fins && fins.length > 0) {
-            const calc = calculateWatchlistFinancials(fins, item.currentPrice, item.dpsAnnual);
-            setFinancialsMap((prev) => ({ ...prev, [item.code]: calc }));
-          } else {
-            setFinancialsMap((prev) => ({ ...prev, [item.code]: null }));
+      let fin = globalFinancialsCache.get(item.code) ?? null;
+      if (!fin || forceRefresh) {
+        const cachedFins = !forceRefresh ? cacheService.getFinsSummary(item.code) : null;
+        let fins = cachedFins;
+        if (!fins || fins.length === 0) {
+          try {
+            fins = await fetchFinsSummary(item.code, forceRefresh);
+          } catch (err: any) {
+            console.warn(`Failed to fetch financials for ${item.code}:`, err);
           }
-        } catch (err: any) {
-          console.warn(`Failed to fetch financials for ${item.code}:`, err);
-          setFinancialsMap((prev) => ({ ...prev, [item.code]: null }));
+          if (isCancelledRef.current) break;
         }
+        if (fins && fins.length > 0) {
+          fin = calculateWatchlistFinancials(fins, item.currentPrice, item.dpsAnnual);
+          if (fin) {
+            globalFinancialsCache.set(item.code, fin);
+          }
+        }
+        if (isCancelledRef.current) break;
+        setFinancialsMap((prev) => ({ ...prev, [item.code]: fin }));
       }
 
       // (B) 日足データの取得 & ベータ値算出
-      const stockCached = !forceRefresh ? cacheService.getStock(item.code) : null;
-      let beta = stockCached?.betaAnalysis ?? null;
-
-      if (!beta) {
+      let beta = globalBetaCache.get(item.code) ?? cacheService.getBetaAnalysis(item.code);
+      if (!beta || forceRefresh) {
+        const stockCached = !forceRefresh ? cacheService.getStock(item.code) : null;
         let bars = stockCached?.historicalBars;
         if (!bars || bars.length === 0) {
           try {
@@ -146,16 +231,17 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
           } catch (err: any) {
             console.warn(`Failed to fetch daily bars for ${item.code}:`, err);
           }
+          if (isCancelledRef.current) break;
         }
 
         if (bars && bars.length > 0 && topixBars && topixBars.length > 0) {
           const calculatedBeta = calculateBeta(bars, topixBars);
           if (calculatedBeta) {
             beta = calculatedBeta;
-            setBetaMap((prev) => ({ ...prev, [item.code]: calculatedBeta }));
+            globalBetaCache.set(item.code, calculatedBeta);
+            cacheService.setBetaAnalysis(item.code, calculatedBeta);
 
             // 既存の完全なキャッシュが存在する場合のみ、日足とベータ値を更新して保存
-            // (不完全なStockDataを新規保存して個別チャート画面の配当履歴等を壊さないようにする)
             if (stockCached) {
               stockCached.historicalBars = bars;
               stockCached.betaAnalysis = calculatedBeta;
@@ -163,7 +249,6 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
             }
           }
         }
-      } else {
         setBetaMap((prev) => ({ ...prev, [item.code]: beta }));
       }
 
@@ -183,12 +268,53 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
     }));
   }, []);
 
+  // 銘柄コードリストの変更検知 & 差分更新 (Diffing)
   useEffect(() => {
-    loadFinancials(false);
+    const prevCodes = prevCodesRef.current;
+    const isInitial = isInitialMountRef.current;
+    isInitialMountRef.current = false;
+
+    // 新規に追加された銘柄コードを特定
+    const addedCodes = Array.from(currentCodes).filter((code) => !prevCodes.has(code));
+    prevCodesRef.current = currentCodes;
+
+    // 銘柄削除のみの場合（新規追加されたコードが0件で初回マウントでない場合）:
+    // 再フェッチ・再計算・プログレスリセットを完全にスキップ！
+    if (!isInitial && addedCodes.length === 0) {
+      // 削除された銘柄のキーをステートからクリーンアップ
+      setFinancialsMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const code of Object.keys(next)) {
+          if (!currentCodes.has(code)) {
+            delete next[code];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      setBetaMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const code of Object.keys(next)) {
+          if (!currentCodes.has(code)) {
+            delete next[code];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      return;
+    }
+
+    // 初回マウント時、または新規銘柄追加時のみ実行
+    // 新規追加時はその銘柄のみを対象にし、既存銘柄の再処理を防止
+    loadFinancials(false, !isInitial && addedCodes.length > 0 ? addedCodes : undefined);
+
     return () => {
       isCancelledRef.current = true;
     };
-  }, [itemCodesKey, loadFinancials]);
+  }, [itemCodesKey, loadFinancials, currentCodes]);
 
   const itemsWithFinancials = useMemo<WatchlistItem[]>(() => {
     return items.map((it) => {
@@ -196,10 +322,12 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       const beta = betaMap[it.code] ?? null;
 
       // 公式開示から抽出された配当金・配当利回りがあれば最優先で反映
+      // 配当利回りは最新の it.currentPrice に追従させてリアルタイム計算
       const effectiveDps = fin?.dpsAnnual ?? it.dpsAnnual;
-      const effectiveYield = fin?.dividendYield ?? (
-        effectiveDps !== null && it.currentPrice > 0 ? (effectiveDps / it.currentPrice) * 100 : it.dividendYield
-      );
+      const effectiveYield =
+        effectiveDps !== null && it.currentPrice > 0
+          ? Math.round((effectiveDps / it.currentPrice) * 10000) / 100
+          : (fin?.dividendYield ?? it.dividendYield);
 
       return {
         ...it,

@@ -84,7 +84,7 @@ npm run build
    - **ビルドコマンド**: `npm run build`
    - **ビルド出力ディレクトリ**: `dist`
 6. **環境変数 (オプション)**:
-   - 必要に応じて `NODE_VERSION` に `20` を設定（リポジトリ内の `.node-version` / `.nvmrc` でも自動認識されます）。
+   - 必要に応じて `NODE_VERSION` に `22` を設定（リポジトリ内の `.node-version` / `.nvmrc` でも自動認識されます）。
    - **重要**: セキュリティ保護のため、Cloudflare の環境変数に J-Quants APIキー（`VITE_JQUANTS_API_KEY` 等）は**絶対に設定しないでください**。APIキーは各利用者がブラウザ画面右上「設定」から `localStorage` にのみ安全に保存して利用します。
 7. **[保存してデプロイ]** をクリック。
    - `dist/` ディレクトリの静的アセットに加え、`functions/api/jq/[[path]].ts`（J-Quants API CORS回避プロキシ）が自動的に Cloudflare Pages Functions としてビルド・デプロイされます。

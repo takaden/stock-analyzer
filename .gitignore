@@ -26,3 +26,5 @@ dist-ssr
 *.sln
 *.sw?
 _worker.bundle
+.wrangler
+batch/.cache
