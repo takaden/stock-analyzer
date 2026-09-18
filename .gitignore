@@ -28,3 +28,5 @@ dist-ssr
 _worker.bundle
 .wrangler
 batch/.cache
+wrangler.toml
+!wrangler.toml.example

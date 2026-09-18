@@ -88,8 +88,8 @@ stock-analyzer/
 ├── AGENTS.md                  # 本ファイル (AI向け仕様書・運用ルール)
 ├── README.md                  # 人間向けプロジェクト概要・デプロイ手順
 ├── index.html                 # エントリーHTML
-├── vite.config.ts             # Vite設定 (プロキシ、absproxy、HMR、D1エミュレーション等)
-├── wrangler.toml              # Cloudflare Pages / D1 データベースバインド設定
+├── wrangler.toml              # Cloudflare D1 設定 (Git除外, ローカル用)
+├── wrangler.toml.example      # Cloudflare D1 設定テンプレート
 ├── tailwind.config.js         # Tailwind CSS設定
 ├── package.json               # 依存関係・スクリプト定義
 ├── .node-version              # Cloudflare Pages / CI用 Node.js バージョン指定 (v22)

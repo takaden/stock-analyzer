@@ -28,14 +28,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Configure D1 Database ID (if Secret is present)
+      - name: Generate wrangler.toml for batch execution
         env:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
         run: |
-          if [ -n "$D1_ID" ]; then
-            echo "database_id = \"$D1_ID\"" >> wrangler.toml
-            echo "D1 database_id injected from secret."
-          fi
+          cat << EOF > wrangler.toml
+          name = "stock-analyzer"
+          compatibility_date = "2026-09-17"
+
+          [[d1_databases]]
+          binding = "DB"
+          database_name = "jquants-db"
+          database_id = "${D1_ID:-00000000-0000-0000-0000-000000000000}"
+          EOF
+          echo "Generated wrangler.toml for batch execution."
 
       - name: Run Daily Sync Batch
         env:
