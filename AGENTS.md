@@ -67,6 +67,18 @@
 - コミットメッセージにはプレフィックス（`feat:`, `fix:`, `refactor:`, `docs:` 等）を用い、変更内容と意図を簡潔明瞭に記述すること。
 - 未コミットの変更を溜め込まず、機能・論理単位でこまめにコミットを打つこと。
 
+### ⑥ Cloudflare D1 ＋ 夜間バッチによる全銘柄DB化アーキテクチャ
+- **背景と課題解決**:
+  - 全上場銘柄（約4,000銘柄）の決算サマリーをフロントエンドから都度取得すると、J-Quants Lightプラン（60回/分）の制約により約65分の待機が発生する。
+  - これを解消するため、**Cloudflare D1 (SQLite)** を導入し、平日夜間に **GitHub Actions** 上で稼働するバッチ処理（`batch/sync_daily.ts`）が当日の全開示・最新株価・バリュエーションを収集して財務11指標・ベータ値を事前計算し D1 へ格納。
+- **データ取得仕様**:
+  - **J-Quants 日付指定一括取得 (`/fins/summary?date=YYYY-MM-DD`)**: その日1日に適時開示・決算修正を出した全銘柄が1リクエストで返却される仕様を活用。日次バッチでは当日分（1リクエスト）のみで全開示を差分更新可能。
+  - **スクリーナー配信 (`functions/api/screener-stocks.ts`)**: D1 のビュー `v_screener_stocks` をクエリし、約4,000銘柄のリアルタイム配当利回り・株価・時価総額等を 0ms で配信（Cloudflare CDNで5分間キャッシュ）。
+  - **ウォッチリスト指標一括配信 (`functions/api/watchlist-metrics.ts`)**: D1 の `calculated_metrics` テーブルから事前計算済みの11指標・5期CF履歴・ベータ値を一括取得。ブラウザでの待機時間・プログレスバー表示を完全撤廃。
+- **ローカル開発環境でのD1エミュレーション**:
+  - `vite.config.ts` に組み込まれた `d1DevPlugin` が `node:sqlite`（Node.js組み込み）経由で `.wrangler/state/v3/d1` 内のローカル SQLite を直接読み取り、ローカル開発時（code-server / Vite）でも本番と完全に同一の D1 API エンドポイントをエミュレート。
+  - フロントエンドは本番・ローカルともに常に `/api/screener-stocks` および `/api/watchlist-metrics` を参照する透過的な設計。
+
 ---
 
 ## 3. ディレクトリ構成と役割
@@ -76,18 +88,33 @@ stock-analyzer/
 ├── AGENTS.md                  # 本ファイル (AI向け仕様書・運用ルール)
 ├── README.md                  # 人間向けプロジェクト概要・デプロイ手順
 ├── index.html                 # エントリーHTML
-├── vite.config.ts             # Vite設定 (プロキシ、absproxy、HMR等)
+├── vite.config.ts             # Vite設定 (プロキシ、absproxy、HMR、D1エミュレーション等)
+├── wrangler.toml              # Cloudflare Pages / D1 データベースバインド設定
 ├── tailwind.config.js         # Tailwind CSS設定
 ├── package.json               # 依存関係・スクリプト定義
 ├── .node-version              # Cloudflare Pages / CI用 Node.js バージョン指定 (v20)
 ├── .nvmrc                     # NVM用 Node.js バージョン指定 (v20)
 ├── .env                       # APIキー環境変数 (Git除外)
 ├── .env.example               # 環境変数テンプレート
+├── .github/
+│   └── workflows/
+│       └── daily_sync.yml     # 平日夜間自動実行 (18:30 JST) GitHub Actions ワークフロー
+├── schema/
+│   ├── schema.sql             # Cloudflare D1 データベース定義 (stocks, quotes, metrics, views)
+│   └── initial_seed.sql       # 過去250営業日の全上場銘柄初期シードSQL (約6.5MB)
+├── batch/                     # 夜間バッチ・データ収集スクリプト群 (TypeScript)
+│   ├── lib/
+│   │   ├── jquantsClient.ts   # レートリミット制御付きJ-Quants APIクライアント
+│   │   └── metricsCalculator.ts # 11指標・ベータ値事前計算ラッパー
+│   ├── init_historical.ts     # 過去250営業日開示収集・初期シードSQL生成スクリプト
+│   └── sync_daily.ts          # 平日夜間差分更新バッチ (D1直接書き込み対応)
 ├── functions/                 # Cloudflare Pages Functions (エッジ関数)
 │   └── api/
 │       ├── jq/
 │       │   └── [[path]].ts    # 本番用 J-Quants API プロキシ
-│       └── watchlist.ts       # 本番用 サーバー共通ウォッチリスト API (Cloudflare KV)
+│       ├── watchlist.ts       # 本番用 サーバー共通ウォッチリスト API (Cloudflare KV)
+│       ├── screener-stocks.ts # 本番用 全銘柄スクリーナー配信用 API (Cloudflare D1)
+│       └── watchlist-metrics.ts # 本番用 ウォッチリスト事前計算指標 API (Cloudflare D1)
 ├── scripts/
 │   └── update_universe.mjs    # JPX400マスターデータ更新・生成スクリプト
 ├── src/
@@ -95,7 +122,7 @@ stock-analyzer/
 │   ├── App.tsx                # メイン画面レイアウト・タブ状態管理
 │   ├── index.css              # Tailwind CSS ディレクティブ
 │   ├── data/
-│   │   ├── jpx400Data.ts      # JPX400構成銘柄・配当金マスターデータ
+│   │   ├── jpx400Data.ts      # JPX400構成銘柄マスターデータ
 │   │   └── watchlist.json     # 開発環境用 サーバーウォッチリスト永続化ファイル
 │   ├── types/
 │   │   └── jquants.ts         # J-Quants APIレスポンス、スクリーナー・ウォッチリスト型定義
@@ -104,9 +131,9 @@ stock-analyzer/
 │   │   └── cacheService.ts    # 二層キャッシュ管理 (インメモリ Map + localStorage 永続化)
 │   ├── hooks/
 │   │   ├── useStockData.ts    # 個別銘柄データ取得・状態管理カスタムフック
-│   │   ├── useScreener.ts     # スクリーニングデータ取得・高速フィルター・ソート
+│   │   ├── useScreener.ts     # スクリーニングデータ取得 (D1優先 + フォールバック)
 │   │   ├── useWatchlist.ts    # ウォッチリスト同期・指標横断結合
-│   │   └── useWatchlistFinancials.ts # 財務サマリー非同期取得・11指標算出・進捗管理
+│   │   └── useWatchlistFinancials.ts # 事前計算指標一括反映 (D1優先 + 0ms描画)
 │   ├── components/
 │   │   ├── Header.tsx         # ヘッダー (ロゴ、API残枠、設定ボタン)
 │   │   ├── NavigationTabs.tsx # タブ切替 (チャート分析 / スクリーニング / ウォッチリスト)
@@ -121,7 +148,7 @@ stock-analyzer/
 │       ├── indicators.ts      # SMA計算、財務サマリー解析(FCF/DOE/ROA等11指標)、配当履歴
 │       └── formatters.ts      # 通貨・時価総額・キャッシュフロー(兆/億)・パーセントフォーマッタ
 └── test/
-    ├── unit.test.ts           # フォーマッタ・SMA・財務11指標算出の単体テスト
+    ├── unit.test.ts           # フォーマッタ・SMA・財務11指標算出・バッチ計算の単体テスト
     └── api_verify.mjs         # J-Quants API 実環境疎通確認スクリプト
 ```
 
@@ -139,17 +166,26 @@ npm run dev
 # 単体テスト実行 (Node.js ネイティブテストランナー)
 npm test
 
-# J-Quants 実APIとの疎通・データ整合性テスト
-node test/api_verify.mjs
-
-# JPX400マスターデータの更新・再生成
-npm run update:universe
-
-# Linter実行
-npm run lint
-
 # プロダクションビルド (TypeScript型チェック + Viteバンドル -> dist/)
 npm run build
+
+# ローカル D1 データベースへのスキーマ適用・初期化
+npx wrangler d1 execute jquants-db --local --file=schema/schema.sql
+
+# ローカル D1 データベースへの初期シード投入 (過去250営業日開示データ)
+npx wrangler d1 execute jquants-db --local --file=schema/initial_seed.sql
+
+# ローカル D1 データベースの日次同期バッチ手動実行
+npx tsx batch/sync_daily.ts
+
+# 本番 D1 データベースの初期スキーマ適用 (初回のみ)
+npx wrangler d1 execute jquants-db --remote --file=schema/schema.sql
+
+# 本番 D1 データベースへの初期シード投入 (初回のみ)
+npx wrangler d1 execute jquants-db --remote --file=schema/initial_seed.sql
+
+# J-Quants 実APIとの疎通・データ整合性テスト
+node test/api_verify.mjs
 ```
 
 ---

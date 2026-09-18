@@ -77,6 +77,31 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
 
     if (itemsToProcess.length === 0) return;
 
+    // 0. Cloudflare D1 から事前計算済み財務指標・ベータ値の一括取得を試みる (待ち時間 0ms)
+    if (!forceRefresh) {
+      try {
+        const BASE_URL = (import.meta.env?.BASE_URL || '/').replace(/\/+$/, '');
+        const codesStr = itemsToProcess.map((it) => it.code).join(',');
+        const res = await fetch(`${BASE_URL}/api/watchlist-metrics?codes=${codesStr}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.data) {
+            Object.entries(json.data).forEach(([code, data]: [string, any]) => {
+              if (data) {
+                globalFinancialsCache.set(code, data);
+                if (data.betaAnalysis) {
+                  globalBetaCache.set(code, data.betaAnalysis);
+                  cacheService.setBetaAnalysis(code, data.betaAnalysis);
+                }
+              }
+            });
+          }
+        }
+      } catch (d1Err) {
+        console.warn('D1 watchlist metrics API unavailable, falling back to local calculation:', d1Err);
+      }
+    }
+
     // 1. ローカルキャッシュおよびグローバルメモリにあるものを同期的に即座に反映
     let topixBars = cacheService.getTopixBars();
     const initialFinsMap: Record<string, WatchlistFinancials | null> = {};

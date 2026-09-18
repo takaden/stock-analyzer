@@ -1027,6 +1027,50 @@ test('Cloudflare Pages Functions onRequest (/api/watchlist)', async (t) => {
   });
 });
 
+import { buildCalculatedMetricsRow } from '../batch/lib/metricsCalculator.ts';
+
+test('buildCalculatedMetricsRow (Batch metrics calculation)', async (t) => {
+  await t.test('accurately calculates metrics for 1928 Sekisui House (forecast DPS 145 yen, yield 4.26%)', () => {
+    const mockSekisuiFins = [
+      {
+        DiscDate: '2026-05-20',
+        CurPerType: 'FY',
+        CurFYEn: '2026-01-31',
+        CurPerEn: '2026-01-31',
+        Sales: '3500000000000',
+        OP: '300000000000',
+        NP: '200000000000',
+        CFO: '350000000000',
+        CFI: '-150000000000',
+        ShEq: '1800000000000',
+        TA: '3600000000000',
+        DivAnn: '135.0',
+        FDivAnn: '',
+      },
+      {
+        DiscDate: '2026-09-10',
+        CurPerType: '2Q',
+        CurFYEn: '2027-01-31',
+        DivAnn: '',
+        FDivAnn: '145.0', // 2Q開示の最新通期予想
+      },
+    ];
+
+    const currentPrice = 3403; // 株価 3,403円
+    const row = buildCalculatedMetricsRow('1928', mockSekisuiFins as any, currentPrice);
+
+    assert.equal(row.code, '1928');
+    assert.equal(row.dps_annual, 145);
+    assert.equal(row.dps_type, 'forecast');
+    assert.equal(row.dividend_yield, 4.26); // (145 / 3403) * 100 = 4.2609... => 4.26%
+    assert.equal(row.latest_fcf, 200000); // 350,000 - 150,000 = 200,000百万円 (2000億円)
+    assert.equal(row.fcf_positive_count, 1);
+    assert.equal(row.is_fcf_consistently_positive, 1);
+    assert.equal(row.equity_ratio, 50.0); // 1.8兆 / 3.6兆 = 50%
+  });
+});
+
+
 
 
 
