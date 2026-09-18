@@ -147,7 +147,8 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       if (fin) initialFinsMap[item.code] = fin;
       if (beta) initialBetaMap[item.code] = beta;
 
-      if (!fin || !beta) {
+      // 財務データがない場合のみ、フォールバックフェッチ対象とする (D1から取得済みの銘柄は即座に描画完了)
+      if (!fin) {
         uncachedItems.push(item);
       }
     }
