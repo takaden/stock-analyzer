@@ -2,8 +2,6 @@ name = "stock-analyzer"
 compatibility_date = "2026-09-17"
 pages_build_output_dir = "dist"
 
-# Cloudflare D1 データベース設定 (ローカル開発およびPages Functions連携)
 [[d1_databases]]
 binding = "DB"
 database_name = "jquants-db"
-database_id = "00000000-0000-0000-0000-000000000000"
