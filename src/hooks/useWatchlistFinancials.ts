@@ -194,6 +194,7 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       const rateState = getRateLimitState();
       if (rateState.remainingThisMinute <= 3 && rateState.nextResetSeconds > 0) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(rateState.nextResetSeconds * 1000, 3000)));
+        if (isCancelledRef.current) break;
       }
 
       // (A) 財務サマリーの取得
@@ -207,6 +208,7 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
           } catch (err: any) {
             console.warn(`Failed to fetch financials for ${item.code}:`, err);
           }
+          if (isCancelledRef.current) break;
         }
         if (fins && fins.length > 0) {
           fin = calculateWatchlistFinancials(fins, item.currentPrice, item.dpsAnnual);
@@ -214,6 +216,7 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
             globalFinancialsCache.set(item.code, fin);
           }
         }
+        if (isCancelledRef.current) break;
         setFinancialsMap((prev) => ({ ...prev, [item.code]: fin }));
       }
 
@@ -228,6 +231,7 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
           } catch (err: any) {
             console.warn(`Failed to fetch daily bars for ${item.code}:`, err);
           }
+          if (isCancelledRef.current) break;
         }
 
         if (bars && bars.length > 0 && topixBars && topixBars.length > 0) {

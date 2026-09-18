@@ -92,8 +92,8 @@ stock-analyzer/
 ├── wrangler.toml              # Cloudflare Pages / D1 データベースバインド設定
 ├── tailwind.config.js         # Tailwind CSS設定
 ├── package.json               # 依存関係・スクリプト定義
-├── .node-version              # Cloudflare Pages / CI用 Node.js バージョン指定 (v20)
-├── .nvmrc                     # NVM用 Node.js バージョン指定 (v20)
+├── .node-version              # Cloudflare Pages / CI用 Node.js バージョン指定 (v22)
+├── .nvmrc                     # NVM用 Node.js バージョン指定 (v22)
 ├── .env                       # APIキー環境変数 (Git除外)
 ├── .env.example               # 環境変数テンプレート
 ├── .github/

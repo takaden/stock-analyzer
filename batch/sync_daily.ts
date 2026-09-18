@@ -99,17 +99,29 @@ async function main() {
     sqlStatements.push(`INSERT OR REPLACE INTO valuations (code, date, per, fwd_per, pbr, roe, fwd_roe, updated_at) VALUES (${escapeSql(code4)}, ${escapeSql(val.Date)}, ${escapeSql(val.PER ?? null)}, ${escapeSql(val.FwdPER ?? null)}, ${escapeSql(val.PBR ?? null)}, ${escapeSql(val.ROE ? val.ROE * 100 : null)}, ${escapeSql(val.FwdROE ? val.FwdROE * 100 : null)}, ${escapeSql(nowStr)});`);
   }
 
-  // (C) calculated_metrics:
-  // 株価変動により配当利回り・PER等の再計算が必要な銘柄、または決算更新のあった銘柄
-  // （4,000銘柄の計算は数秒で終わるため、全銘柄を最新株価で再計算して更新）
-  for (const [rawCode, bar] of barMap.entries()) {
-    const code4 = rawCode.replace(/0$/, '');
-    const fins = (finsByCode[code4] || []).sort((a, b) => b.DiscDate.localeCompare(a.DiscDate));
-    const currentPrice = bar.C || 0;
+  // (C) 本日発表された決算開示の financial_disclosures 保存
+  for (const f of todayFins) {
+    const code4 = f.Code.replace(/0$/, '');
+    sqlStatements.push(`INSERT OR REPLACE INTO financial_disclosures (
+      code, disc_date, cur_per_type, cur_per_en, sales, op, rp, np, eps, f_eps,
+      cfo, cfi, sh_eq, ta, eq_ar, div_ann, f_div_ann, raw_json, created_at
+    ) VALUES (
+      ${escapeSql(code4)}, ${escapeSql(f.DiscDate)}, ${escapeSql(f.CurPerType)}, ${escapeSql(f.CurPerEn)},
+      ${escapeSql(f.Sales)}, ${escapeSql(f.OP)}, ${escapeSql(f.RP)}, ${escapeSql(f.NP)}, ${escapeSql(f.EPS)}, ${escapeSql(f.FEPS)},
+      ${escapeSql(f.CFO)}, ${escapeSql(f.CFI)}, ${escapeSql((f as any).ShEq ?? (f as any).Eq)}, ${escapeSql(f.TA)}, ${escapeSql((f as any).EqAR)},
+      ${escapeSql(f.DivAnn)}, ${escapeSql(f.FDivAnn)}, ${escapeSql(JSON.stringify(f))}, ${escapeSql(nowStr)}
+    );`);
+  }
 
+  // (D) calculated_metrics 更新:
+  // 1. 本日決算・配当開示があった銘柄 -> 最新財務サマリーに基づき完全再計算＆UPSERT (既存ベータ値は保持)
+  for (const code4 of updatedStockCodes) {
+    const bar = barMap.get(`${code4}0`) || barMap.get(code4);
+    const currentPrice = bar?.C || 0;
+    const fins = (finsByCode[code4] || []).sort((a, b) => b.DiscDate.localeCompare(a.DiscDate));
     const row = buildCalculatedMetricsRow(code4, fins, currentPrice, undefined, topixBars);
 
-    sqlStatements.push(`INSERT OR REPLACE INTO calculated_metrics (
+    sqlStatements.push(`INSERT INTO calculated_metrics (
       code, dps_annual, dps_type, dividend_yield, latest_cfo, latest_cfi, latest_fcf,
       cf_history_json, fcf_positive_count, fcf_total_count, is_fcf_consistently_positive,
       non_reduction_years, is_no_dividend_cut_5years, equity_ratio, payout_ratio,
@@ -124,11 +136,59 @@ async function main() {
       ${row.non_reduction_years}, ${row.is_no_dividend_cut_5years}, ${escapeSql(row.equity_ratio)},
       ${escapeSql(row.payout_ratio)}, ${escapeSql(row.payout_ratio_status)}, ${escapeSql(row.doe)},
       ${row.is_doe_high}, ${escapeSql(row.op_margin)}, ${escapeSql(row.roe)}, ${row.is_roe_good},
-      ${escapeSql(row.roa)}, ${row.is_roe_good}, ${escapeSql(row.eps_5year_cagr)}, ${escapeSql(row.eps_trend)},
+      ${escapeSql(row.roa)}, ${row.is_roa_good}, ${escapeSql(row.eps_5year_cagr)}, ${escapeSql(row.eps_trend)},
       ${escapeSql(row.beta_1year)}, ${escapeSql(row.beta_3year)}, ${escapeSql(row.beta_5year)},
       ${escapeSql(row.beta_correlation)}, ${escapeSql(row.beta_category)}, ${escapeSql(row.beta_label)},
       ${escapeSql(row.beta_badge_emoji)}, ${row.score_passed}, ${row.score_total}, ${escapeSql(row.updated_at)}
-    );`);
+    )
+    ON CONFLICT(code) DO UPDATE SET
+      dps_annual = excluded.dps_annual,
+      dps_type = excluded.dps_type,
+      dividend_yield = excluded.dividend_yield,
+      latest_cfo = excluded.latest_cfo,
+      latest_cfi = excluded.latest_cfi,
+      latest_fcf = excluded.latest_fcf,
+      cf_history_json = excluded.cf_history_json,
+      fcf_positive_count = excluded.fcf_positive_count,
+      fcf_total_count = excluded.fcf_total_count,
+      is_fcf_consistently_positive = excluded.is_fcf_consistently_positive,
+      non_reduction_years = excluded.non_reduction_years,
+      is_no_dividend_cut_5years = excluded.is_no_dividend_cut_5years,
+      equity_ratio = excluded.equity_ratio,
+      payout_ratio = excluded.payout_ratio,
+      payout_ratio_status = excluded.payout_ratio_status,
+      doe = excluded.doe,
+      is_doe_high = excluded.is_doe_high,
+      op_margin = excluded.op_margin,
+      roe = excluded.roe,
+      is_roe_good = excluded.is_roe_good,
+      roa = excluded.roa,
+      is_roa_good = excluded.is_roa_good,
+      eps_5year_cagr = excluded.eps_5year_cagr,
+      eps_trend = excluded.eps_trend,
+      beta_1year = COALESCE(excluded.beta_1year, calculated_metrics.beta_1year),
+      beta_3year = COALESCE(excluded.beta_3year, calculated_metrics.beta_3year),
+      beta_5year = COALESCE(excluded.beta_5year, calculated_metrics.beta_5year),
+      beta_correlation = COALESCE(excluded.beta_correlation, calculated_metrics.beta_correlation),
+      beta_category = COALESCE(excluded.beta_category, calculated_metrics.beta_category),
+      beta_label = COALESCE(excluded.beta_label, calculated_metrics.beta_label),
+      beta_badge_emoji = COALESCE(excluded.beta_badge_emoji, calculated_metrics.beta_badge_emoji),
+      score_passed = excluded.score_passed,
+      score_total = excluded.score_total,
+      updated_at = excluded.updated_at;`);
+  }
+
+  // 2. 本日決算開示がなかった銘柄 -> 既存の財務指標・ベータ値を一切破壊せず、株価変動に伴う配当利回りのみを安全に更新
+  for (const [rawCode, bar] of barMap.entries()) {
+    const code4 = rawCode.replace(/0$/, '');
+    if (updatedStockCodes.has(code4)) continue;
+    const currentPrice = bar.C || 0;
+    if (currentPrice > 0) {
+      sqlStatements.push(`UPDATE calculated_metrics SET
+        dividend_yield = CASE WHEN dps_annual IS NOT NULL AND dps_annual > 0 THEN ROUND(CAST(dps_annual AS REAL) / ${currentPrice} * 100, 2) ELSE dividend_yield END,
+        updated_at = ${escapeSql(nowStr)}
+      WHERE code = ${escapeSql(code4)};`);
+    }
   }
 
   const diffSqlPath = path.resolve('batch/.cache/daily_sync.sql');
@@ -149,4 +209,7 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error('Daily sync failed:', err);
+  process.exitCode = 1;
+});

@@ -15,24 +15,31 @@ export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve
 let lastRequestTime = 0;
 // Lightプラン: 60回/分 = 最小1000ms間隔
 const MIN_INTERVAL_MS = 1050;
+let rateLimitQueue: Promise<void> = Promise.resolve();
+
+function waitForRateLimitSlot(): Promise<void> {
+  rateLimitQueue = rateLimitQueue.then(async () => {
+    const now = Date.now();
+    const elapsed = now - lastRequestTime;
+    if (elapsed < MIN_INTERVAL_MS) {
+      await sleep(MIN_INTERVAL_MS - elapsed);
+    }
+    lastRequestTime = Date.now();
+  });
+  return rateLimitQueue;
+}
 
 async function requestWithRateLimit<T>(path: string, params: Record<string, string> = {}): Promise<T> {
   if (!API_KEY) {
     throw new Error('API key not found. Please set VITE_JQUANTS_API_KEY or JQUANTS_API_KEY in .env');
   }
 
-  const now = Date.now();
-  const elapsed = now - lastRequestTime;
-  if (elapsed < MIN_INTERVAL_MS) {
-    await sleep(MIN_INTERVAL_MS - elapsed);
-  }
+  await waitForRateLimitSlot();
 
   const url = new URL(`${BASE_URL}${path}`);
   Object.entries(params).forEach(([k, v]) => {
     if (v != null && v !== '') url.searchParams.set(k, v);
   });
-
-  lastRequestTime = Date.now();
 
   let retries = 3;
   while (retries > 0) {
@@ -150,7 +157,7 @@ export async function fetchLatestTradingDate(): Promise<{ latestDate: string; pr
   const res = await requestWithRateLimit<{ data: RawDailyBar[] }>('/equities/bars/daily', { code: '7203' });
   const bars = (res.data || []).sort((a, b) => a.Date.localeCompare(b.Date));
   if (bars.length < 2) {
-    return { latestDate: '2026-09-17', prevDate: '2026-09-16' };
+    throw new Error(`Failed to resolve latest trading dates: insufficient benchmark daily bars (found ${bars.length}).`);
   }
   return {
     latestDate: bars[bars.length - 1].Date,

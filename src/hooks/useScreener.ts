@@ -68,6 +68,9 @@ export function useScreener() {
               isPrime: Boolean(item.isPrime),
             }));
             setAllStocks(list);
+            if (json.data[0]?.latestDate) {
+              setLatestDate(json.data[0].latestDate);
+            }
             setLoading(false);
             return;
           }

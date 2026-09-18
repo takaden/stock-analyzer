@@ -45,15 +45,27 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   try {
-    // プレースホルダ (? , ? , ?) を生成
-    const placeholders = codes.map(() => '?').join(',');
-    const query = `SELECT * FROM calculated_metrics WHERE code IN (${placeholders})`;
+    // SQLite バインド変数上限対策: 最大100件ずつチャンク分割してクエリ
+    const CHUNK_SIZE = 100;
+    const allResults: any[] = [];
 
-    const { results } = await env.DB.prepare(query).bind(...codes).all();
+    for (let i = 0; i < codes.length; i += CHUNK_SIZE) {
+      const chunk = codes.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      const query = `SELECT * FROM calculated_metrics WHERE code IN (${placeholders})`;
+      const { results } = await env.DB.prepare(query).bind(...chunk).all();
+      if (results && results.length > 0) {
+        allResults.push(...results);
+      }
+    }
 
-    // Map 形式 (code -> Record) に整形
+    // Map 形式 (code -> WatchlistFinancials) に整形
     const metricsMap: Record<string, any> = {};
-    for (const r of results as any[]) {
+    for (const r of allResults) {
+      const eqRatio = r.equity_ratio;
+      const doeVal = r.doe;
+      const opMarginVal = r.op_margin;
+
       metricsMap[r.code] = {
         dpsAnnual: r.dps_annual,
         dpsType: r.dps_type,
@@ -66,13 +78,22 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         fcfTotalCount: r.fcf_total_count,
         isFcfConsistentlyPositive: Boolean(r.is_fcf_consistently_positive),
         nonReductionYears: r.non_reduction_years,
+        consecutiveDividendGrowthYears: r.non_reduction_years ?? 0,
         isNoDividendCut5Years: Boolean(r.is_no_dividend_cut_5years),
-        equityRatio: r.equity_ratio,
+        equityRatio: eqRatio,
+        isEquityRatioSafe: eqRatio != null ? eqRatio >= 40 : false,
+        isEquityRatioSolid: eqRatio != null ? eqRatio >= 60 : false,
+        equityGrowthTrend: 'stable',
+        equity5YearChangePercent: null,
         payoutRatio: r.payout_ratio,
         payoutRatioStatus: r.payout_ratio_status,
-        doe: r.doe,
+        doe: doeVal,
         isDoeHigh: Boolean(r.is_doe_high),
-        opMargin: r.op_margin,
+        isDoeTopTier: doeVal != null ? doeVal >= 3.5 : false,
+        buybackDetected: false,
+        opMargin: opMarginVal,
+        isOpMarginHigh: opMarginVal != null ? opMarginVal >= 8 : false,
+        isOpMarginTopTier: opMarginVal != null ? opMarginVal >= 10 : false,
         roe: r.roe,
         isRoeGood: Boolean(r.is_roe_good),
         roa: r.roa,

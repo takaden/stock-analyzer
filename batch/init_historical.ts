@@ -194,4 +194,7 @@ async function main() {
   console.log('   npx wrangler d1 execute jquants-db --local --file=./schema/initial_seed.sql');
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error('Initialization failed:', err);
+  process.exitCode = 1;
+});

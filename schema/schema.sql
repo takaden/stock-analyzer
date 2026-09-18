@@ -125,6 +125,7 @@ SELECT
   s.is_jpx400 AS isJpx400,
   s.is_topix100 AS isTopix100,
   s.is_prime AS isPrime,
+  q.date AS latestDate,
   COALESCE(q.close, 0) AS currentPrice,
   q.prev_close AS previousClose,
   q.price_change AS priceChange,
