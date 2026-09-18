@@ -170,7 +170,7 @@ export function filterUnprocessedTradingDates(
   if (lastSyncDate) {
     unprocessedDates = sorted
       .filter((d) => d > lastSyncDate)
-      .slice(-maxCatchUpDays);
+      .slice(0, maxCatchUpDays);
   }
 
   // 未同期リストが空（同日再実行、または初回）の場合は latestDate を対象とする

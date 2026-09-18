@@ -1106,11 +1106,30 @@ test('filterUnprocessedTradingDates (Catch-up sync date resolution)', async (t) 
     assert.deepEqual(res.unprocessedDates, ['2026-09-11']);
   });
 
-  await t.test('caps catch-up dates to maxCatchUpDays when offline for a long period', () => {
-    const manyDates = Array.from({ length: 50 }, (_, i) => `2026-01-${String(i + 1).padStart(2, '0')}`);
-    const res = filterUnprocessedTradingDates(manyDates, '2025-12-31', 10);
-    assert.equal(res.unprocessedDates.length, 10);
-    assert.equal(res.unprocessedDates[res.unprocessedDates.length - 1], manyDates[manyDates.length - 1]);
+  await t.test('sequentially processes all dates in batches from oldest to newest across multiple runs', () => {
+    const manyDates = Array.from({ length: 25 }, (_, i) => `2026-01-${String(i + 1).padStart(2, '0')}`);
+    const BATCH_SIZE = 10;
+
+    // Run 1: 最初の10日分 (2026-01-01 〜 2026-01-10)
+    const run1 = filterUnprocessedTradingDates(manyDates, '2025-12-31', BATCH_SIZE);
+    assert.equal(run1.unprocessedDates.length, 10);
+    assert.deepEqual(run1.unprocessedDates, manyDates.slice(0, 10));
+
+    // Run 2: 次の10日分 (2026-01-11 〜 2026-01-20)
+    const cursor1 = run1.unprocessedDates[run1.unprocessedDates.length - 1];
+    const run2 = filterUnprocessedTradingDates(manyDates, cursor1, BATCH_SIZE);
+    assert.equal(run2.unprocessedDates.length, 10);
+    assert.deepEqual(run2.unprocessedDates, manyDates.slice(10, 20));
+
+    // Run 3: 残りの5日分 (2026-01-21 〜 2026-01-25)
+    const cursor2 = run2.unprocessedDates[run2.unprocessedDates.length - 1];
+    const run3 = filterUnprocessedTradingDates(manyDates, cursor2, BATCH_SIZE);
+    assert.equal(run3.unprocessedDates.length, 5);
+    assert.deepEqual(run3.unprocessedDates, manyDates.slice(20, 25));
+
+    // 全ての実行結果を結合すると全営業日リストと完全に一致することを検証
+    const combined = [...run1.unprocessedDates, ...run2.unprocessedDates, ...run3.unprocessedDates];
+    assert.deepEqual(combined, manyDates);
   });
 
   await t.test('throws error if trading dates count is less than 2', () => {

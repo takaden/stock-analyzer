@@ -149,3 +149,11 @@ FROM stocks s
 LEFT JOIN daily_quotes q ON s.code = q.code AND q.date = (SELECT MAX(date) FROM daily_quotes WHERE code = s.code)
 LEFT JOIN valuations v ON s.code = v.code AND v.date = (SELECT MAX(date) FROM valuations WHERE code = s.code)
 LEFT JOIN calculated_metrics m ON s.code = m.code;
+
+-- 7. システム同期カーソル管理テーブル
+CREATE TABLE IF NOT EXISTS sync_cursors (
+  key TEXT PRIMARY KEY,               -- カーソル識別子 (例: 'disclosures')
+  value TEXT NOT NULL,                -- カーソル値 (最終同期日付 YYYY-MM-DD 等)
+  updated_at TEXT NOT NULL
+);
+

@@ -31,18 +31,29 @@ async function main() {
   const isRemote = process.env.D1_ENV === 'remote' || process.argv.includes('--remote');
   const targetFlag = isRemote ? '--remote' : '--local';
 
-  // 1. D1 から前回同期済み最新日付を取得
+  // 1. D1 から開示処理の成功日（専用カーソル）を取得
   let lastSyncDate: string | null = null;
   try {
     const stdout = execSync(
-      `npx wrangler d1 execute jquants-db ${targetFlag} --command="SELECT MAX(date) AS max_date FROM daily_quotes;" --json`,
-      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }
+      `npx wrangler d1 execute jquants-db ${targetFlag} --command="CREATE TABLE IF NOT EXISTS sync_cursors (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL); SELECT value FROM sync_cursors WHERE key = 'disclosures';" --json`,
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
     );
     const parsed = JSON.parse(stdout);
-    lastSyncDate = parsed[0]?.results[0]?.max_date ?? null;
-    console.log(`📅 Last sync date in D1: ${lastSyncDate || 'None (Initial)'}`);
-  } catch (e) {
-    console.warn('Could not query last sync date from D1, defaulting to latest day:', e);
+    if (!parsed || !Array.isArray(parsed)) {
+      throw new Error(`Invalid JSON format from D1 response: ${stdout}`);
+    }
+    // SELECT の結果（配列内の results を持つ要素）を取得
+    const selectResult = parsed.find((item: any) => item.results && Array.isArray(item.results));
+    if (selectResult && selectResult.results.length > 0) {
+      lastSyncDate = selectResult.results[0]?.value ?? null;
+    } else {
+      // 成功したが空テーブル（未初期化・初回実行）の場合は null
+      lastSyncDate = null;
+    }
+    console.log(`📅 Last disclosure sync date in D1: ${lastSyncDate || 'None (Initial)'}`);
+  } catch (e: any) {
+    console.error('❌ Failed to retrieve sync cursor from D1:', e?.message || e);
+    throw e;
   }
 
   // 2. 営業日と未同期期間の特定
@@ -217,6 +228,13 @@ async function main() {
         updated_at = ${escapeSql(nowStr)}
       WHERE code = ${escapeSql(code4)};`);
     }
+  }
+
+  // 3. sync_cursors の開示同期成功日を更新 (今回処理した最終日)
+  if (unprocessedDates.length > 0) {
+    const lastProcessedDate = unprocessedDates[unprocessedDates.length - 1];
+    sqlStatements.push(`INSERT INTO sync_cursors (key, value, updated_at) VALUES ('disclosures', ${escapeSql(lastProcessedDate)}, ${escapeSql(nowStr)})
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`);
   }
 
   const diffSqlPath = path.resolve('batch/.cache/daily_sync.sql');
