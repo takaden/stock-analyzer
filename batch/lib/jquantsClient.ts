@@ -151,18 +151,61 @@ export async function fetchAllMasters(): Promise<RawMaster[]> {
   return res.data || [];
 }
 
-/** 代表銘柄（トヨタ）の日足から最新営業日を取得 */
-export async function fetchLatestTradingDate(): Promise<{ latestDate: string; prevDate: string }> {
-  console.log('📡 Detecting latest trading dates from benchmark (7203)...');
+/**
+ * 営業日リスト（昇順）から前回同期日以降の未処理営業日を抽出する純粋関数
+ */
+export function filterUnprocessedTradingDates(
+  tradingDates: string[],
+  lastSyncDate?: string | null,
+  maxCatchUpDays = 30
+): { latestDate: string; prevDate: string; unprocessedDates: string[] } {
+  if (tradingDates.length < 2) {
+    throw new Error(`Insufficient trading dates (found ${tradingDates.length}).`);
+  }
+  const sorted = [...tradingDates].sort((a, b) => a.localeCompare(b));
+  const latestDate = sorted[sorted.length - 1];
+  const prevDate = sorted[sorted.length - 2];
+
+  let unprocessedDates: string[] = [];
+  if (lastSyncDate) {
+    unprocessedDates = sorted
+      .filter((d) => d > lastSyncDate)
+      .slice(-maxCatchUpDays);
+  }
+
+  // 未同期リストが空（同日再実行、または初回）の場合は latestDate を対象とする
+  if (unprocessedDates.length === 0) {
+    unprocessedDates = [latestDate];
+  }
+
+  return { latestDate, prevDate, unprocessedDates };
+}
+
+/**
+ * 前回同期日以降の未同期営業日リストおよび最新/前営業日を取得
+ */
+export async function fetchTradingDatesSince(
+  lastSyncDate?: string | null,
+  maxCatchUpDays = 30
+): Promise<{
+  latestDate: string;
+  prevDate: string;
+  unprocessedDates: string[];
+}> {
+  console.log('📡 Detecting trading dates from benchmark (7203)...');
   const res = await requestWithRateLimit<{ data: RawDailyBar[] }>('/equities/bars/daily', { code: '7203' });
   const bars = (res.data || []).sort((a, b) => a.Date.localeCompare(b.Date));
   if (bars.length < 2) {
     throw new Error(`Failed to resolve latest trading dates: insufficient benchmark daily bars (found ${bars.length}).`);
   }
-  return {
-    latestDate: bars[bars.length - 1].Date,
-    prevDate: bars[bars.length - 2].Date,
-  };
+  const dates = bars.map((b) => b.Date);
+  return filterUnprocessedTradingDates(dates, lastSyncDate, maxCatchUpDays);
+}
+
+/** 代表銘柄（トヨタ）の日足から最新営業日を取得 (後方互換用) */
+export async function fetchLatestTradingDate(): Promise<{ latestDate: string; prevDate: string }> {
+  const { latestDate, prevDate } = await fetchTradingDatesSince(null);
+  return { latestDate, prevDate };
 }
 
 /** 指定日の全銘柄日足取得 (ページネーション対応) */

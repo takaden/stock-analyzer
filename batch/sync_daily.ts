@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import {
-  fetchLatestTradingDate,
+  fetchTradingDatesSince,
   fetchDailyBarsByDate,
   fetchValuationsByDate,
   fetchFinsByDate,
   fetchTopixBars,
+  RawFinSummary,
 } from './lib/jquantsClient';
 import { buildCalculatedMetricsRow } from './lib/metricsCalculator';
 import type { FinSummary } from '../src/types/jquants';
@@ -26,20 +27,47 @@ function escapeSql(val: any): string {
 async function main() {
   console.log('🌙 Starting Daily Sync Batch for J-Quants & Cloudflare D1...');
 
-  // 1. 最新営業日と前営業日を特定
-  const { latestDate, prevDate } = await fetchLatestTradingDate();
-  console.log(`📅 Target Latest Date: ${latestDate}, Prev Date: ${prevDate}`);
+  // D1 実行モード判定 (CIや環境変数に応じて local / remote を決定)
+  const isRemote = process.env.D1_ENV === 'remote' || process.argv.includes('--remote');
+  const targetFlag = isRemote ? '--remote' : '--local';
 
-  // 2. 本日の株価四本値・前日日足・バリュエーション取得
-  const [latestBars, prevBars, valuations, todayFins, topixBars] = await Promise.all([
+  // 1. D1 から前回同期済み最新日付を取得
+  let lastSyncDate: string | null = null;
+  try {
+    const stdout = execSync(
+      `npx wrangler d1 execute jquants-db ${targetFlag} --command="SELECT MAX(date) AS max_date FROM daily_quotes;" --json`,
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+    const parsed = JSON.parse(stdout);
+    lastSyncDate = parsed[0]?.results[0]?.max_date ?? null;
+    console.log(`📅 Last sync date in D1: ${lastSyncDate || 'None (Initial)'}`);
+  } catch (e) {
+    console.warn('Could not query last sync date from D1, defaulting to latest day:', e);
+  }
+
+  // 2. 営業日と未同期期間の特定
+  const { latestDate, prevDate, unprocessedDates } = await fetchTradingDatesSince(lastSyncDate);
+  console.log(`📅 Target Latest Date: ${latestDate}, Prev Date: ${prevDate}`);
+  console.log(`🔄 Catch-up disclosure dates (${unprocessedDates.length} days): [${unprocessedDates.join(', ')}]`);
+
+  // 3. 本日の株価四本値・前日日足・バリュエーション取得
+  const [latestBars, prevBars, valuations, topixBars] = await Promise.all([
     fetchDailyBarsByDate(latestDate),
     fetchDailyBarsByDate(prevDate),
     fetchValuationsByDate(latestDate),
-    fetchFinsByDate(latestDate),
     fetchTopixBars(),
   ]);
 
-  console.log(`✅ Fetched: ${latestBars.length} bars, ${valuations.length} valuations, ${todayFins.length} today disclosures.`);
+  // 未同期営業日（1日〜最大30営業日）の決算開示を全件キャッチアップ取得
+  const allDisclosures: RawFinSummary[] = [];
+  for (const targetDate of unprocessedDates) {
+    console.log(`📡 Fetching disclosures for date ${targetDate}...`);
+    const fins = await fetchFinsByDate(targetDate);
+    console.log(`  - Date ${targetDate}: ${fins.length} disclosures found.`);
+    allDisclosures.push(...fins);
+  }
+
+  console.log(`✅ Fetched: ${latestBars.length} bars, ${valuations.length} valuations, ${allDisclosures.length} total catch-up disclosures.`);
 
   const prevCloseMap = new Map<string, number>();
   prevBars.forEach((b) => prevCloseMap.set(b.Code, b.C));
@@ -50,7 +78,7 @@ async function main() {
   const valMap = new Map<string, (typeof valuations)[0]>();
   valuations.forEach((v) => valMap.set(v.Code, v));
 
-  // 3. 決算開示キャッシュの更新
+  // 4. 決算開示キャッシュの更新
   const finsCachePath = path.join(CACHE_DIR, 'all_fins_cache.json');
   let finsByCode: Record<string, FinSummary[]> = {};
   if (fs.existsSync(finsCachePath)) {
@@ -61,10 +89,10 @@ async function main() {
     }
   }
 
-  // 本日開示があった銘柄コード集合
+  // キャッチアップ期間中に開示があった銘柄コード集合
   const updatedStockCodes = new Set<string>();
 
-  todayFins.forEach((f) => {
+  allDisclosures.forEach((f) => {
     const code4 = f.Code.replace(/0$/, '');
     if (!finsByCode[code4]) finsByCode[code4] = [];
     const exists = finsByCode[code4].some(
@@ -79,7 +107,7 @@ async function main() {
   fs.writeFileSync(finsCachePath, JSON.stringify(finsByCode), 'utf-8');
   console.log(`📝 Updated disclosures for ${updatedStockCodes.size} stocks.`);
 
-  // 4. SQL 差分ステートメントの作成
+  // 5. SQL 差分ステートメントの作成
   const sqlStatements: string[] = [];
   const nowStr = new Date().toISOString();
 
@@ -99,8 +127,8 @@ async function main() {
     sqlStatements.push(`INSERT OR REPLACE INTO valuations (code, date, per, fwd_per, pbr, roe, fwd_roe, updated_at) VALUES (${escapeSql(code4)}, ${escapeSql(val.Date)}, ${escapeSql(val.PER ?? null)}, ${escapeSql(val.FwdPER ?? null)}, ${escapeSql(val.PBR ?? null)}, ${escapeSql(val.ROE ? val.ROE * 100 : null)}, ${escapeSql(val.FwdROE ? val.FwdROE * 100 : null)}, ${escapeSql(nowStr)});`);
   }
 
-  // (C) 本日発表された決算開示の financial_disclosures 保存
-  for (const f of todayFins) {
+  // (C) キャッチアップ期間中に発表された決算開示の financial_disclosures 保存
+  for (const f of allDisclosures) {
     const code4 = f.Code.replace(/0$/, '');
     sqlStatements.push(`INSERT OR REPLACE INTO financial_disclosures (
       code, disc_date, cur_per_type, cur_per_en, sales, op, rp, np, eps, f_eps,
@@ -194,10 +222,6 @@ async function main() {
   const diffSqlPath = path.resolve('batch/.cache/daily_sync.sql');
   fs.writeFileSync(diffSqlPath, sqlStatements.join('\n'), 'utf-8');
   console.log(`📝 Generated daily sync SQL (${(fs.statSync(diffSqlPath).size / 1024).toFixed(1)} KB).`);
-
-  // D1 実行モード判定 (CIや環境変数に応じて local / remote を実行)
-  const isRemote = process.env.D1_ENV === 'remote' || process.argv.includes('--remote');
-  const targetFlag = isRemote ? '--remote' : '--local';
 
   console.log(`🚀 Executing sync on D1 (${targetFlag})...`);
   try {

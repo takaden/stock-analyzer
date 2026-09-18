@@ -1070,6 +1070,55 @@ test('buildCalculatedMetricsRow (Batch metrics calculation)', async (t) => {
   });
 });
 
+import { filterUnprocessedTradingDates } from '../batch/lib/jquantsClient.ts';
+
+test('filterUnprocessedTradingDates (Catch-up sync date resolution)', async (t) => {
+  const tradingDates = [
+    '2026-09-01',
+    '2026-09-02',
+    '2026-09-03',
+    '2026-09-04',
+    '2026-09-07',
+    '2026-09-08',
+    '2026-09-09',
+    '2026-09-10',
+    '2026-09-11',
+  ];
+
+  await t.test('returns latest date when lastSyncDate is null (initial run)', () => {
+    const res = filterUnprocessedTradingDates(tradingDates, null);
+    assert.equal(res.latestDate, '2026-09-11');
+    assert.equal(res.prevDate, '2026-09-10');
+    assert.deepEqual(res.unprocessedDates, ['2026-09-11']);
+  });
+
+  await t.test('captures all missed dates when batch was stopped for several days', () => {
+    // 2026-09-04 まで同期済みで、2026-09-11 に再開した場合 (3営業日抜けていた)
+    const res = filterUnprocessedTradingDates(tradingDates, '2026-09-04');
+    assert.equal(res.latestDate, '2026-09-11');
+    assert.equal(res.prevDate, '2026-09-10');
+    assert.deepEqual(res.unprocessedDates, ['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11']);
+  });
+
+  await t.test('handles same day re-run gracefully by returning latest date', () => {
+    const res = filterUnprocessedTradingDates(tradingDates, '2026-09-11');
+    assert.equal(res.latestDate, '2026-09-11');
+    assert.deepEqual(res.unprocessedDates, ['2026-09-11']);
+  });
+
+  await t.test('caps catch-up dates to maxCatchUpDays when offline for a long period', () => {
+    const manyDates = Array.from({ length: 50 }, (_, i) => `2026-01-${String(i + 1).padStart(2, '0')}`);
+    const res = filterUnprocessedTradingDates(manyDates, '2025-12-31', 10);
+    assert.equal(res.unprocessedDates.length, 10);
+    assert.equal(res.unprocessedDates[res.unprocessedDates.length - 1], manyDates[manyDates.length - 1]);
+  });
+
+  await t.test('throws error if trading dates count is less than 2', () => {
+    assert.throws(() => filterUnprocessedTradingDates(['2026-09-11']), /Insufficient trading dates/);
+  });
+});
+
+
 
 
 
