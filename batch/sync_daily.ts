@@ -80,7 +80,7 @@ async function main() {
   console.log(`📝 Updated disclosures for ${updatedStockCodes.size} stocks.`);
 
   // 4. SQL 差分ステートメントの作成
-  const sqlStatements: string[] = ['BEGIN TRANSACTION;'];
+  const sqlStatements: string[] = [];
   const nowStr = new Date().toISOString();
 
   // (A) daily_quotes 更新 (全銘柄)
@@ -130,8 +130,6 @@ async function main() {
       ${escapeSql(row.beta_badge_emoji)}, ${row.score_passed}, ${row.score_total}, ${escapeSql(row.updated_at)}
     );`);
   }
-
-  sqlStatements.push('COMMIT;');
 
   const diffSqlPath = path.resolve('batch/.cache/daily_sync.sql');
   fs.writeFileSync(diffSqlPath, sqlStatements.join('\n'), 'utf-8');

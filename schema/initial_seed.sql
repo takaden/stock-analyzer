@@ -1,4 +1,3 @@
-BEGIN TRANSACTION;
 INSERT OR REPLACE INTO stocks (code, raw_code, name, market, sector, scale_cat, is_jpx400, is_topix100, is_prime, updated_at) VALUES ('1301', '13010', '極洋', 'プライム', '水産・農林業', 'TOPIX Small 1', 0, 0, 1, '2026-09-18T01:37:31.502Z');
 INSERT OR REPLACE INTO stocks (code, raw_code, name, market, sector, scale_cat, is_jpx400, is_topix100, is_prime, updated_at) VALUES ('130A', '130A0', 'Ｖｅｒｉｔａｓ　Ｉｎ　Ｓｉｌｉｃｏ', 'グロース', '医薬品', '-', 0, 0, 0, '2026-09-18T01:37:31.502Z');
 INSERT OR REPLACE INTO stocks (code, raw_code, name, market, sector, scale_cat, is_jpx400, is_topix100, is_prime, updated_at) VALUES ('131A', '131A0', 'ＣＣＮグループ', 'TOKYO PRO MARKET', '情報･通信業', '-', 0, 0, 0, '2026-09-18T01:37:31.502Z');
@@ -90774,4 +90773,3 @@ INSERT OR REPLACE INTO calculated_metrics (
       NULL, NULL, NULL,
       NULL, 4, 10, '2026-09-18T01:37:31.698Z'
     );
-COMMIT;

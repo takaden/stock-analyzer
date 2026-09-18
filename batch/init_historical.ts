@@ -126,7 +126,7 @@ async function main() {
 
   // 5. SQL INSERT 文の生成
   console.log('📝 Generating SQL statements for D1...');
-  const sqlStatements: string[] = ['BEGIN TRANSACTION;'];
+  const sqlStatements: string[] = [];
 
   const nowStr = new Date().toISOString();
 
@@ -186,8 +186,6 @@ async function main() {
       ${escapeSql(row.beta_badge_emoji)}, ${row.score_passed}, ${row.score_total}, ${escapeSql(row.updated_at)}
     );`);
   }
-
-  sqlStatements.push('COMMIT;');
 
   const sqlOutPath = path.resolve('schema/initial_seed.sql');
   fs.writeFileSync(sqlOutPath, sqlStatements.join('\n'), 'utf-8');
