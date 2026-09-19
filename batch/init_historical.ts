@@ -11,6 +11,7 @@ import {
 } from './lib/jquantsClient';
 import { buildCalculatedMetricsRow } from './lib/metricsCalculator';
 import type { FinSummary } from '../src/types/jquants';
+import { JPX400_UNIVERSE } from '../src/data/jpx400Data';
 
 const CACHE_DIR = path.resolve('batch/.cache');
 if (!fs.existsSync(CACHE_DIR)) {
@@ -130,10 +131,12 @@ async function main() {
 
   const nowStr = new Date().toISOString();
 
+  const jpx400CodeSet = new Set(JPX400_UNIVERSE.map((u) => u.code));
+
   // (A) stocks
   for (const s of commonStocks) {
     const code4 = s.Code.replace(/0$/, '');
-    const isJpx400 = s.ScaleCat === 'TOPIX Core30' || s.ScaleCat === 'TOPIX Large70' || s.ScaleCat === 'TOPIX Mid400' ? 1 : 0;
+    const isJpx400 = jpx400CodeSet.has(code4) ? 1 : 0;
     const isTopix100 = s.ScaleCat === 'TOPIX Core30' || s.ScaleCat === 'TOPIX Large70' ? 1 : 0;
     const isPrime = s.MktNm === 'プライム' ? 1 : 0;
 

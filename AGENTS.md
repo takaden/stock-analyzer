@@ -195,6 +195,9 @@ npx wrangler d1 execute jquants-db --remote --file=schema/schema.sql
 # 本番 D1 データベースへの初期シード投入 (初回のみ)
 npx wrangler d1 execute jquants-db --remote --file=schema/initial_seed.sql
 
+# 本番 D1 データベースへの JPX400 銘柄補正適用 (492件から400件への是正)
+npx wrangler d1 execute jquants-db --remote --file=schema/fix_jpx400.sql
+
 # J-Quants 実APIとの疎通・データ整合性テスト
 node test/api_verify.mjs
 ```
@@ -204,7 +207,11 @@ node test/api_verify.mjs
 ## 5. 機能仕様とデータフロー
 
 ### ① 銘柄スクリーニング機能
-- **ユニバース切替**: JPX日経400（デフォルト）、TOPIX 100（大型優良株）、プライム市場、全銘柄。
+- **ユニバース切替**:
+  - **JPX日経400（デフォルト）**: `src/data/jpx400Data.ts` の公式400銘柄マスターと厳密に照合された400銘柄。
+  - **TOPIX 100（大型優良株）**: J-Quants APIの規模区分（`ScaleCat`）における `TOPIX Core30`（31銘柄）と `TOPIX Large70`（68銘柄）の合計99銘柄（東証の定期見直し過渡期運用に基づく公式開示データ）。
+  - **プライム市場**: 東証プライム上場全銘柄（約1,600銘柄）。
+  - **全銘柄**: 東証上場全銘柄（約4,000銘柄）。
 - **データ取得と効率性**:
   - 初回アクセス時に全銘柄マスター（`/equities/master`、24時間キャッシュ）、最新営業日の日足株価（`/equities/bars/daily?date=...`）およびバリュエーション指標（`/equities/valuation?date=...`）を一括取得。
   - プライム市場や全銘柄ユニバースでも、全4,000銘柄超の正式会社名・業種・市場区分が100%完全に表示される。
