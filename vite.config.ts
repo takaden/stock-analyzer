@@ -76,6 +76,33 @@ function watchlistDevPlugin(): Plugin {
   }
 }
 
+function getD1Database(): any | null {
+  try {
+    const d1Dir = path.resolve(__dirname, '.wrangler/state/v3/d1/miniflare-D1DatabaseObject')
+    if (!fs.existsSync(d1Dir)) return null
+    const dbFiles = fs.readdirSync(d1Dir).filter((f) => f.endsWith('.sqlite') && !f.startsWith('metadata'))
+    if (dbFiles.length === 0) return null
+
+    // @ts-ignore
+    const { DatabaseSync } = require('node:sqlite')
+    for (const file of dbFiles) {
+      try {
+        const db = new DatabaseSync(path.join(d1Dir, file))
+        const hasTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = 'v_screener_stocks'").get()
+        if (hasTable) {
+          return db
+        }
+        db.close()
+      } catch {
+        // 次の候補ファイルを試行
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to resolve local D1 database:', e)
+  }
+  return null
+}
+
 function d1DevPlugin(): Plugin {
   return {
     name: 'd1-dev-api',
@@ -86,28 +113,20 @@ function d1DevPlugin(): Plugin {
 
         // 1. /api/screener-stocks エンドポイント
         if (pathname === '/api/screener-stocks' || pathname === '/absproxy/5173/api/screener-stocks') {
-          try {
-            const d1Dir = path.resolve(__dirname, '.wrangler/state/v3/d1/miniflare-D1DatabaseObject')
-            if (fs.existsSync(d1Dir)) {
-              const dbFile = fs.readdirSync(d1Dir).find((f) => f.endsWith('.sqlite') && !f.startsWith('metadata'))
-              if (dbFile) {
-                // @ts-ignore
-                const { DatabaseSync } = require('node:sqlite')
-                const db = new DatabaseSync(path.join(d1Dir, dbFile))
-                try {
-                  const rows = db.prepare('SELECT * FROM v_screener_stocks ORDER BY marketCap DESC').all()
-                  res.setHeader('Content-Type', 'application/json')
-                  res.setHeader('Access-Control-Allow-Origin', '*')
-                  res.statusCode = 200
-                  res.end(JSON.stringify({ data: rows, count: rows.length }))
-                  return
-                } finally {
-                  db.close()
-                }
-              }
+          const db = getD1Database()
+          if (db) {
+            try {
+              const rows = db.prepare('SELECT * FROM v_screener_stocks ORDER BY marketCap DESC').all()
+              res.setHeader('Content-Type', 'application/json')
+              res.setHeader('Access-Control-Allow-Origin', '*')
+              res.statusCode = 200
+              res.end(JSON.stringify({ data: rows, count: rows.length }))
+              return
+            } catch (e: any) {
+              console.warn('Local D1 query error for screener-stocks:', e)
+            } finally {
+              db.close()
             }
-          } catch (e: any) {
-            console.warn('Local D1 query error for screener-stocks:', e)
           }
         }
 
@@ -118,77 +137,71 @@ function d1DevPlugin(): Plugin {
             const codesParam = url.searchParams.get('codes')
             if (codesParam) {
               const codes = codesParam.split(',').map((c) => c.trim()).filter(Boolean)
-              const d1Dir = path.resolve(__dirname, '.wrangler/state/v3/d1/miniflare-D1DatabaseObject')
-              if (fs.existsSync(d1Dir)) {
-                const dbFile = fs.readdirSync(d1Dir).find((f) => f.endsWith('.sqlite') && !f.startsWith('metadata'))
-                if (dbFile) {
-                  // @ts-ignore
-                  const { DatabaseSync } = require('node:sqlite')
-                  const db = new DatabaseSync(path.join(d1Dir, dbFile))
-                  try {
-                    const placeholders = codes.map(() => '?').join(',')
-                    const rows = db.prepare(`SELECT * FROM calculated_metrics WHERE code IN (${placeholders})`).all(...codes)
-                    const metricsMap: Record<string, any> = {}
-                    for (const r of rows as any[]) {
-                      const eqRatio = r.equity_ratio
-                      const doeVal = r.doe
-                      const opMarginVal = r.op_margin
+              const db = getD1Database()
+              if (db) {
+                try {
+                  const placeholders = codes.map(() => '?').join(',')
+                  const rows = db.prepare(`SELECT * FROM calculated_metrics WHERE code IN (${placeholders})`).all(...codes)
+                  const metricsMap: Record<string, any> = {}
+                  for (const r of rows as any[]) {
+                    const eqRatio = r.equity_ratio
+                    const doeVal = r.doe
+                    const opMarginVal = r.op_margin
 
-                      metricsMap[r.code] = {
-                        dpsAnnual: r.dps_annual,
-                        dpsType: r.dps_type,
-                        dividendYield: r.dividend_yield,
-                        latestCfo: r.latest_cfo,
-                        latestCfi: r.latest_cfi,
-                        latestFcf: r.latest_fcf,
-                        cfHistory: r.cf_history_json ? JSON.parse(r.cf_history_json) : [],
-                        fcfPositiveCount: r.fcf_positive_count,
-                        fcfTotalCount: r.fcf_total_count,
-                        isFcfConsistentlyPositive: Boolean(r.is_fcf_consistently_positive),
-                        nonReductionYears: r.non_reduction_years,
-                        consecutiveDividendGrowthYears: r.non_reduction_years ?? 0,
-                        isNoDividendCut5Years: Boolean(r.is_no_dividend_cut_5years),
-                        equityRatio: eqRatio,
-                        isEquityRatioSafe: eqRatio != null ? eqRatio >= 40 : false,
-                        isEquityRatioSolid: eqRatio != null ? eqRatio >= 60 : false,
-                        equityGrowthTrend: 'stable',
-                        equity5YearChangePercent: null,
-                        payoutRatio: r.payout_ratio,
-                        payoutRatioStatus: r.payout_ratio_status,
-                        doe: doeVal,
-                        isDoeHigh: Boolean(r.is_doe_high),
-                        isDoeTopTier: doeVal != null ? doeVal >= 3.5 : false,
-                        buybackDetected: false,
-                        opMargin: opMarginVal,
-                        isOpMarginHigh: opMarginVal != null ? opMarginVal >= 8 : false,
-                        isOpMarginTopTier: opMarginVal != null ? opMarginVal >= 10 : false,
-                        roe: r.roe,
-                        isRoeGood: Boolean(r.is_roe_good),
-                        roa: r.roa,
-                        isRoaGood: Boolean(r.is_roa_good),
-                        eps5YearCagr: r.eps_5year_cagr,
-                        epsTrend: r.eps_trend,
-                        betaAnalysis: r.beta_1year != null ? {
-                          beta1Year: r.beta_1year,
-                          beta3Year: r.beta_3year,
-                          beta5Year: r.beta_5year,
-                          correlation: r.beta_correlation,
-                          category: r.beta_category,
-                          label: r.beta_label,
-                          badgeEmoji: r.beta_badge_emoji,
-                        } : null,
-                        scorePassed: r.score_passed,
-                        scoreTotal: r.score_total,
-                      }
+                    metricsMap[r.code] = {
+                      dpsAnnual: r.dps_annual,
+                      dpsType: r.dps_type,
+                      dividendYield: r.dividend_yield,
+                      latestCfo: r.latest_cfo,
+                      latestCfi: r.latest_cfi,
+                      latestFcf: r.latest_fcf,
+                      cfHistory: r.cf_history_json ? JSON.parse(r.cf_history_json) : [],
+                      fcfPositiveCount: r.fcf_positive_count,
+                      fcfTotalCount: r.fcf_total_count,
+                      isFcfConsistentlyPositive: Boolean(r.is_fcf_consistently_positive),
+                      nonReductionYears: r.non_reduction_years,
+                      consecutiveDividendGrowthYears: r.non_reduction_years ?? 0,
+                      isNoDividendCut5Years: Boolean(r.is_no_dividend_cut_5years),
+                      equityRatio: eqRatio,
+                      isEquityRatioSafe: eqRatio != null ? eqRatio >= 40 : false,
+                      isEquityRatioSolid: eqRatio != null ? eqRatio >= 60 : false,
+                      equityGrowthTrend: 'stable',
+                      equity5YearChangePercent: null,
+                      payoutRatio: r.payout_ratio,
+                      payoutRatioStatus: r.payout_ratio_status,
+                      doe: doeVal,
+                      isDoeHigh: Boolean(r.is_doe_high),
+                      isDoeTopTier: doeVal != null ? doeVal >= 3.5 : false,
+                      buybackDetected: false,
+                      opMargin: opMarginVal,
+                      isOpMarginHigh: opMarginVal != null ? opMarginVal >= 8 : false,
+                      isOpMarginTopTier: opMarginVal != null ? opMarginVal >= 10 : false,
+                      roe: r.roe,
+                      isRoeGood: Boolean(r.is_roe_good),
+                      roa: r.roa,
+                      isRoaGood: Boolean(r.is_roa_good),
+                      eps5YearCagr: r.eps_5year_cagr,
+                      epsTrend: r.eps_trend,
+                      betaAnalysis: r.beta_1year != null ? {
+                        beta1Year: r.beta_1year,
+                        beta3Year: r.beta_3year,
+                        beta5Year: r.beta_5year,
+                        correlation: r.beta_correlation,
+                        category: r.beta_category,
+                        label: r.beta_label,
+                        badgeEmoji: r.beta_badge_emoji,
+                      } : null,
+                      scorePassed: r.score_passed,
+                      scoreTotal: r.score_total,
                     }
-                    res.setHeader('Content-Type', 'application/json')
-                    res.setHeader('Access-Control-Allow-Origin', '*')
-                    res.statusCode = 200
-                    res.end(JSON.stringify({ data: metricsMap }))
-                    return
-                  } finally {
-                    db.close()
                   }
+                  res.setHeader('Content-Type', 'application/json')
+                  res.setHeader('Access-Control-Allow-Origin', '*')
+                  res.statusCode = 200
+                  res.end(JSON.stringify({ data: metricsMap }))
+                  return
+                } finally {
+                  db.close()
                 }
               }
             }
