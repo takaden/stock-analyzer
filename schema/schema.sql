@@ -27,7 +27,6 @@ CREATE TABLE IF NOT EXISTS daily_quotes (
   high REAL,
   low REAL,
   volume REAL,                        -- 出来高 (株)
-  trading_value REAL,                 -- 売買代金 (円)
   prev_close REAL,                    -- 前日終値 (円)
   price_change REAL,                  -- 前日比 (円)
   price_change_percent REAL,          -- 騰落率 (%)
@@ -133,7 +132,7 @@ SELECT
   q.price_change AS priceChange,
   q.price_change_percent AS priceChangePercent,
   COALESCE(q.volume, 0) AS volume,
-  COALESCE(q.trading_value, CAST(q.close * q.volume AS REAL), 0) AS tradingValue,
+  CAST(COALESCE(q.close, 0) * COALESCE(q.volume, 0) AS REAL) AS tradingValue,
   COALESCE(q.market_cap, 0) AS marketCap,
   m.dps_annual AS dpsAnnual,
   m.dividend_yield AS dividendYield,

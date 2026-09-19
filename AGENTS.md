@@ -119,6 +119,8 @@ stock-analyzer/
 │   │   └── metricsCalculator.ts # 11指標・ベータ値事前計算ラッパー
 │   ├── init_historical.ts     # 過去250営業日開示収集・初期シードSQL生成スクリプト
 │   └── sync_daily.ts          # 平日夜間差分更新バッチ (D1直接書き込み対応)
+├── migrations/                # Cloudflare D1 順序管理マイグレーションSQL群
+│   └── 0001_add_trading_value.sql # daily_quotes trading_value列追加 & ビュー再作成
 ├── functions/                 # Cloudflare Pages Functions (エッジ関数)
 │   └── api/
 │       ├── jq/
@@ -182,6 +184,10 @@ npm run build
 
 # ローカル D1 データベースへのスキーマ適用・初期化
 npx wrangler d1 execute jquants-db --local --file=schema/schema.sql
+
+# D1 マイグレーションの適用 (trading_value 列追加・ビュー再作成)
+npm run d1:migrate:local
+npm run d1:migrate:remote
 
 # ローカル D1 データベースへの初期シード投入 (過去250営業日開示データ)
 npx wrangler d1 execute jquants-db --local --file=schema/initial_seed.sql
