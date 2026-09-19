@@ -11,6 +11,7 @@ import {
 } from './lib/jquantsClient';
 import { buildCalculatedMetricsRow } from './lib/metricsCalculator';
 import type { FinSummary } from '../src/types/jquants';
+import { JPX400_UNIVERSE } from '../src/data/jpx400Data';
 
 const CACHE_DIR = path.resolve('batch/.cache');
 if (!fs.existsSync(CACHE_DIR)) {
@@ -130,10 +131,12 @@ async function main() {
 
   const nowStr = new Date().toISOString();
 
+  const jpx400CodeSet = new Set(JPX400_UNIVERSE.map((u) => u.code));
+
   // (A) stocks
   for (const s of commonStocks) {
     const code4 = s.Code.replace(/0$/, '');
-    const isJpx400 = s.ScaleCat === 'TOPIX Core30' || s.ScaleCat === 'TOPIX Large70' || s.ScaleCat === 'TOPIX Mid400' ? 1 : 0;
+    const isJpx400 = jpx400CodeSet.has(code4) ? 1 : 0;
     const isTopix100 = s.ScaleCat === 'TOPIX Core30' || s.ScaleCat === 'TOPIX Large70' ? 1 : 0;
     const isPrime = s.MktNm === 'プライム' ? 1 : 0;
 
@@ -147,7 +150,7 @@ async function main() {
     const priceChange = prevClose != null && bar.C ? bar.C - prevClose : null;
     const priceChangePercent = prevClose != null && prevClose > 0 && priceChange != null ? (priceChange / prevClose) * 100 : null;
 
-    sqlStatements.push(`INSERT OR REPLACE INTO daily_quotes (code, date, close, open, high, low, volume, prev_close, price_change, price_change_percent, market_cap, updated_at) VALUES (${escapeSql(code4)}, ${escapeSql(bar.Date)}, ${escapeSql(bar.C)}, ${escapeSql(bar.O)}, ${escapeSql(bar.H)}, ${escapeSql(bar.L)}, ${escapeSql(bar.Vo)}, ${escapeSql(prevClose)}, ${escapeSql(priceChange)}, ${escapeSql(priceChangePercent)}, ${escapeSql(bar.MktCap ?? null)}, ${escapeSql(nowStr)});`);
+    sqlStatements.push(`INSERT OR REPLACE INTO daily_quotes (code, date, close, open, high, low, volume, trading_value, prev_close, price_change, price_change_percent, market_cap, updated_at) VALUES (${escapeSql(code4)}, ${escapeSql(bar.Date)}, ${escapeSql(bar.C)}, ${escapeSql(bar.O)}, ${escapeSql(bar.H)}, ${escapeSql(bar.L)}, ${escapeSql(bar.Vo)}, ${escapeSql(bar.Va ?? (bar.C && bar.Vo ? bar.C * bar.Vo : null))}, ${escapeSql(prevClose)}, ${escapeSql(priceChange)}, ${escapeSql(priceChangePercent)}, ${escapeSql(bar.MktCap ?? null)}, ${escapeSql(nowStr)});`);
   }
 
   // (C) valuations

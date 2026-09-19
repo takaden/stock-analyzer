@@ -7,6 +7,7 @@ import {
   formatPriceChange,
   formatRatio,
   formatMarketCap,
+  formatTradingValue,
   formatVolume,
   formatDate,
 } from '../utils/formatters';
@@ -247,35 +248,33 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
             </div>
           </div>
 
-          {/* 2行目: 出来高クイック選択 (AND条件) */}
+          {/* 2行目: 売買代金クイック選択 (AND条件) */}
           <div className="space-y-1.5 pt-2 border-t border-slate-800/60">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                 <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
-                <span>出来高（以上・AND条件）:</span>
+                <span>売買代金（以上・AND条件）:</span>
               </label>
-              {filters.minVolume != null && (
+              {filters.minTradingValueOku != null && (
                 <span className="text-xs font-bold text-indigo-400">
-                  {filters.minVolume >= 10000
-                    ? `${(filters.minVolume / 10000).toLocaleString('ja-JP')}万株 以上`
-                    : `${filters.minVolume.toLocaleString('ja-JP')}株 以上`}
+                  {filters.minTradingValueOku}億円 以上
                 </span>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {[
                 { label: '指定なし', value: null },
-                { label: '10万株+', value: 100000 },
-                { label: '30万株+', value: 300000 },
-                { label: '50万株+', value: 500000 },
-                { label: '100万株+', value: 1000000 },
-                { label: '300万株+', value: 3000000 },
+                { label: '1億円+', value: 1 },
+                { label: '3億円+', value: 3 },
+                { label: '5億円+', value: 5 },
+                { label: '10億円+', value: 10 },
+                { label: '30億円+', value: 30 },
               ].map((opt) => (
                 <button
                   key={opt.label}
-                  onClick={() => onUpdateFilter('minVolume', opt.value)}
+                  onClick={() => onUpdateFilter('minTradingValueOku', opt.value)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                    filters.minVolume === opt.value
+                    filters.minTradingValueOku === opt.value
                       ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/50 font-semibold'
                       : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-700/60'
                   }`}
@@ -286,17 +285,17 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
               <div className="flex items-center gap-1 ml-auto">
                 <input
                   type="number"
-                  step="10"
+                  step="1"
                   min="0"
-                  placeholder="例: 50"
-                  value={filters.minVolume != null ? filters.minVolume / 10000 : ''}
+                  placeholder="例: 5"
+                  value={filters.minTradingValueOku ?? ''}
                   onChange={(e) => {
-                    const val = e.target.value === '' ? null : parseFloat(e.target.value) * 10000;
-                    onUpdateFilter('minVolume', val);
+                    const val = e.target.value === '' ? null : parseFloat(e.target.value);
+                    onUpdateFilter('minTradingValueOku', val);
                   }}
                   className="w-20 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-right text-slate-200 focus:outline-none focus:border-indigo-500"
                 />
-                <span className="text-xs text-slate-400">万株</span>
+                <span className="text-xs text-slate-400">億円</span>
               </div>
             </div>
           </div>
@@ -309,7 +308,7 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
             className="flex items-center gap-1.5 text-xs font-medium text-indigo-400 hover:text-indigo-300 transition"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>詳細フィルター（PER / PBR / 時価総額 / 出来高 / 業種）</span>
+            <span>詳細フィルター（PER / PBR / 時価総額 / 売買代金 / 業種）</span>
             {showAdvanced ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
 
@@ -370,16 +369,17 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
               />
             </div>
 
-            {/* 出来高 */}
+            {/* 売買代金 */}
             <div className="space-y-1">
-              <label className="text-slate-400">出来高 (株以上):</label>
+              <label className="text-slate-400">売買代金 (億円以上):</label>
               <input
                 type="number"
-                step="10000"
-                placeholder="例: 100000"
-                value={filters.minVolume ?? ''}
+                step="1"
+                min="0"
+                placeholder="例: 5 (5億円)"
+                value={filters.minTradingValueOku ?? ''}
                 onChange={(e) =>
-                  onUpdateFilter('minVolume', e.target.value === '' ? null : parseFloat(e.target.value))
+                  onUpdateFilter('minTradingValueOku', e.target.value === '' ? null : parseFloat(e.target.value))
                 }
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
               />
@@ -414,7 +414,7 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
 
       {/* 適用中のAND条件バッジ一覧 */}
       {(filters.minDividendYield != null ||
-        filters.minVolume != null ||
+        filters.minTradingValueOku != null ||
         filters.maxPer != null ||
         filters.maxPbr != null ||
         filters.minMarketCapOku != null ||
@@ -436,13 +436,13 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
             </span>
           )}
 
-          {filters.minVolume != null && (
+          {filters.minTradingValueOku != null && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-indigo-950/60 text-indigo-300 border border-indigo-800/80">
               <span>
-                出来高 {filters.minVolume >= 10000 ? `${filters.minVolume / 10000}万株` : `${filters.minVolume}株`}以上
+                売買代金 {filters.minTradingValueOku}億円以上
               </span>
               <button
-                onClick={() => onUpdateFilter('minVolume', null)}
+                onClick={() => onUpdateFilter('minTradingValueOku', null)}
                 className="hover:text-white"
                 title="条件を解除"
               >
@@ -620,17 +620,6 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
                   </div>
                 </th>
 
-                {/* 年間配当金 */}
-                <th
-                  onClick={() => onSort('dpsAnnual')}
-                  className="py-3 px-3 font-semibold text-right cursor-pointer hover:text-slate-200 transition group"
-                >
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span>配当金</span>
-                    {renderSortIcon('dpsAnnual')}
-                  </div>
-                </th>
-
                 {/* 時価総額 */}
                 <th
                   onClick={() => onSort('marketCap')}
@@ -639,6 +628,17 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
                   <div className="flex items-center justify-end gap-1.5">
                     <span>時価総額</span>
                     {renderSortIcon('marketCap')}
+                  </div>
+                </th>
+
+                {/* 売買代金 */}
+                <th
+                  onClick={() => onSort('tradingValue')}
+                  className="py-3 px-3 font-semibold text-right cursor-pointer hover:text-slate-200 transition group"
+                >
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span>売買代金</span>
+                    {renderSortIcon('tradingValue')}
                   </div>
                 </th>
 
@@ -786,14 +786,14 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
                         {formatPercent(stock.dividendYield)}
                       </td>
 
-                      {/* 年間配当金 */}
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-200 font-medium">
-                        {stock.dpsAnnual != null ? `${stock.dpsAnnual}円` : '-'}
-                      </td>
-
                       {/* 時価総額 */}
                       <td className="py-2.5 px-3 text-right font-mono text-slate-200 font-medium whitespace-nowrap">
                         {formatMarketCap(stock.marketCap)}
+                      </td>
+
+                      {/* 売買代金 */}
+                      <td className="py-2.5 px-3 text-right font-mono text-slate-200 font-medium whitespace-nowrap">
+                        {formatTradingValue(stock.tradingValue)}
                       </td>
 
                       {/* 出来高 */}

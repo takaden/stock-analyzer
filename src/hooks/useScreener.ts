@@ -14,6 +14,7 @@ export type SortField =
   | 'dividendYield'
   | 'dpsAnnual'
   | 'marketCap'
+  | 'tradingValue'
   | 'volume'
   | 'per'
   | 'pbr'
@@ -56,6 +57,12 @@ export function useScreener() {
               priceChange: item.priceChange,
               priceChangePercent: item.priceChangePercent,
               volume: item.volume,
+              tradingValue:
+                item.tradingValue != null
+                  ? item.tradingValue
+                  : item.currentPrice && item.volume
+                    ? item.currentPrice * item.volume
+                    : 0,
               marketCap: item.marketCap,
               dpsAnnual: item.dpsAnnual,
               dividendYield: item.dividendYield,
@@ -147,6 +154,7 @@ export function useScreener() {
           priceChange,
           priceChangePercent,
           volume: bar?.Vo || 0,
+          tradingValue: bar?.Va ?? ((bar?.C || 0) * (bar?.Vo || 0)),
           marketCap: bar?.MktCap ?? val?.MktCap ?? null,
           dpsAnnual,
           dividendYield,
@@ -208,6 +216,7 @@ export function useScreener() {
           priceChange,
           priceChangePercent,
           volume: bar.Vo,
+          tradingValue: bar.Va ?? (bar.C * bar.Vo),
           marketCap: bar.MktCap ?? val?.MktCap ?? null,
           dpsAnnual,
           dividendYield,
@@ -282,9 +291,10 @@ export function useScreener() {
         }
       }
 
-      // 6. 出来高 (X株以上)
-      if (filters.minVolume != null) {
-        if (stock.volume < filters.minVolume) {
+      // 6. 売買代金 (X億円以上)
+      if (filters.minTradingValueOku != null) {
+        const thresholdYen = filters.minTradingValueOku * 100_000_000;
+        if (stock.tradingValue < thresholdYen) {
           return false;
         }
       }

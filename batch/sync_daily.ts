@@ -129,7 +129,7 @@ async function main() {
     const priceChange = prevClose != null && bar.C ? bar.C - prevClose : null;
     const priceChangePercent = prevClose != null && prevClose > 0 && priceChange != null ? (priceChange / prevClose) * 100 : null;
 
-    sqlStatements.push(`INSERT OR REPLACE INTO daily_quotes (code, date, close, open, high, low, volume, prev_close, price_change, price_change_percent, market_cap, updated_at) VALUES (${escapeSql(code4)}, ${escapeSql(bar.Date)}, ${escapeSql(bar.C)}, ${escapeSql(bar.O)}, ${escapeSql(bar.H)}, ${escapeSql(bar.L)}, ${escapeSql(bar.Vo)}, ${escapeSql(prevClose)}, ${escapeSql(priceChange)}, ${escapeSql(priceChangePercent)}, ${escapeSql(bar.MktCap ?? null)}, ${escapeSql(nowStr)});`);
+    sqlStatements.push(`INSERT OR REPLACE INTO daily_quotes (code, date, close, open, high, low, volume, trading_value, prev_close, price_change, price_change_percent, market_cap, updated_at) VALUES (${escapeSql(code4)}, ${escapeSql(bar.Date)}, ${escapeSql(bar.C)}, ${escapeSql(bar.O)}, ${escapeSql(bar.H)}, ${escapeSql(bar.L)}, ${escapeSql(bar.Vo)}, ${escapeSql(bar.Va ?? (bar.C && bar.Vo ? bar.C * bar.Vo : null))}, ${escapeSql(prevClose)}, ${escapeSql(priceChange)}, ${escapeSql(priceChangePercent)}, ${escapeSql(bar.MktCap ?? null)}, ${escapeSql(nowStr)});`);
   }
 
   // (B) valuations 更新 (全銘柄)
@@ -142,11 +142,11 @@ async function main() {
   for (const f of allDisclosures) {
     const code4 = f.Code.replace(/0$/, '');
     sqlStatements.push(`INSERT OR REPLACE INTO financial_disclosures (
-      code, disc_date, cur_per_type, cur_per_en, sales, op, rp, np, eps, f_eps,
+      code, disc_date, cur_per_type, cur_per_en, sales, op, np, eps, f_eps,
       cfo, cfi, sh_eq, ta, eq_ar, div_ann, f_div_ann, raw_json, created_at
     ) VALUES (
       ${escapeSql(code4)}, ${escapeSql(f.DiscDate)}, ${escapeSql(f.CurPerType)}, ${escapeSql(f.CurPerEn)},
-      ${escapeSql(f.Sales)}, ${escapeSql(f.OP)}, ${escapeSql(f.RP)}, ${escapeSql(f.NP)}, ${escapeSql(f.EPS)}, ${escapeSql(f.FEPS)},
+      ${escapeSql(f.Sales)}, ${escapeSql(f.OP)}, ${escapeSql(f.NP)}, ${escapeSql(f.EPS)}, ${escapeSql(f.FEPS)},
       ${escapeSql(f.CFO)}, ${escapeSql(f.CFI)}, ${escapeSql((f as any).ShEq ?? (f as any).Eq)}, ${escapeSql(f.TA)}, ${escapeSql((f as any).EqAR)},
       ${escapeSql(f.DivAnn)}, ${escapeSql(f.FDivAnn)}, ${escapeSql(JSON.stringify(f))}, ${escapeSql(nowStr)}
     );`);

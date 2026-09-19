@@ -71,3 +71,18 @@ export function formatCashFlow(valInMillions: number | null | undefined): string
   }
   return isNeg ? `-${text}` : `+${text}`;
 }
+
+// 売買代金（円単位の入力 -> 兆 / 億円 / 万円 表記）: 1.42兆円, 45.8億円, 8,500万円
+export function formatTradingValue(valInYen: number | null | undefined): string {
+  if (valInYen === null || valInYen === undefined || isNaN(valInYen)) return '-';
+  const oku = valInYen / 100_000_000;
+  if (oku >= 10000) {
+    const cho = oku / 10000;
+    return `${cho.toFixed(2)}兆円`;
+  }
+  if (oku >= 1) {
+    return `${oku.toFixed(1)}億円`;
+  }
+  const man = valInYen / 10_000;
+  return `${man.toLocaleString('ja-JP', { maximumFractionDigits: 0 })}万円`;
+}

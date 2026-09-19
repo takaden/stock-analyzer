@@ -7,6 +7,7 @@ import {
   formatPercent,
   formatRatio,
   formatMarketCap,
+  formatTradingValue,
   formatVolume,
   formatCashFlow,
 } from '../src/utils/formatters.ts';
@@ -54,6 +55,16 @@ test('formatters', async (t) => {
 
   await t.test('formatVolume formats stock shares', () => {
     assert.equal(formatVolume(30864600), '30,864,600株');
+  });
+
+  await t.test('formatTradingValue handles cho, oku and man properly', () => {
+    // 1兆5000億円 (1,500,000,000,000円)
+    assert.equal(formatTradingValue(1500000000000), '1.50兆円');
+    // 5億2000万円 (520,000,000円)
+    assert.equal(formatTradingValue(520000000), '5.2億円');
+    // 8500万円 (85,000,000円)
+    assert.equal(formatTradingValue(85000000), '8,500万円');
+    assert.equal(formatTradingValue(null), '-');
   });
 
   await t.test('formatCashFlow formats cash flow in cho and oku with signs', () => {
@@ -168,9 +179,9 @@ test('extractDividendHistory', async (t) => {
 import { DEFAULT_SCREENER_FILTERS } from '../src/types/jquants.ts';
 
 test('screener filters', async (t) => {
-  await t.test('default filters set dividend yield >= 2.5% and volume >= 500k', () => {
+  await t.test('default filters set dividend yield >= 2.5% and trading value >= 5 oku', () => {
     assert.equal(DEFAULT_SCREENER_FILTERS.minDividendYield, 2.5);
-    assert.equal(DEFAULT_SCREENER_FILTERS.minVolume, 500000);
+    assert.equal(DEFAULT_SCREENER_FILTERS.minTradingValueOku, 5);
     assert.equal(DEFAULT_SCREENER_FILTERS.universe, 'jpx400');
   });
 });

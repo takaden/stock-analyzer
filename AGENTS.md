@@ -119,6 +119,8 @@ stock-analyzer/
 │   │   └── metricsCalculator.ts # 11指標・ベータ値事前計算ラッパー
 │   ├── init_historical.ts     # 過去250営業日開示収集・初期シードSQL生成スクリプト
 │   └── sync_daily.ts          # 平日夜間差分更新バッチ (D1直接書き込み対応)
+├── migrations/                # Cloudflare D1 順序管理マイグレーションSQL群
+│   └── 0001_add_trading_value.sql # daily_quotes trading_value列追加 & ビュー再作成
 ├── functions/                 # Cloudflare Pages Functions (エッジ関数)
 │   └── api/
 │       ├── jq/
@@ -183,6 +185,10 @@ npm run build
 # ローカル D1 データベースへのスキーマ適用・初期化
 npx wrangler d1 execute jquants-db --local --file=schema/schema.sql
 
+# D1 マイグレーションの適用 (trading_value 列追加・ビュー再作成)
+npm run d1:migrate:local
+npm run d1:migrate:remote
+
 # ローカル D1 データベースへの初期シード投入 (過去250営業日開示データ)
 npx wrangler d1 execute jquants-db --local --file=schema/initial_seed.sql
 
@@ -195,6 +201,9 @@ npx wrangler d1 execute jquants-db --remote --file=schema/schema.sql
 # 本番 D1 データベースへの初期シード投入 (初回のみ)
 npx wrangler d1 execute jquants-db --remote --file=schema/initial_seed.sql
 
+# 本番 D1 データベースへの JPX400 銘柄補正適用 (492件から400件への是正)
+npx wrangler d1 execute jquants-db --remote --file=schema/fix_jpx400.sql
+
 # J-Quants 実APIとの疎通・データ整合性テスト
 node test/api_verify.mjs
 ```
@@ -204,13 +213,17 @@ node test/api_verify.mjs
 ## 5. 機能仕様とデータフロー
 
 ### ① 銘柄スクリーニング機能
-- **ユニバース切替**: JPX日経400（デフォルト）、TOPIX 100（大型優良株）、プライム市場、全銘柄。
+- **ユニバース切替**:
+  - **JPX日経400（デフォルト）**: `src/data/jpx400Data.ts` の公式400銘柄マスターと厳密に照合された400銘柄。
+  - **TOPIX 100（大型優良株）**: J-Quants APIの規模区分（`ScaleCat`）における `TOPIX Core30`（31銘柄）と `TOPIX Large70`（68銘柄）の合計99銘柄（東証の定期見直し過渡期運用に基づく公式開示データ）。
+  - **プライム市場**: 東証プライム上場全銘柄（約1,600銘柄）。
+  - **全銘柄**: 東証上場全銘柄（約4,000銘柄）。
 - **データ取得と効率性**:
   - 初回アクセス時に全銘柄マスター（`/equities/master`、24時間キャッシュ）、最新営業日の日足株価（`/equities/bars/daily?date=...`）およびバリュエーション指標（`/equities/valuation?date=...`）を一括取得。
   - プライム市場や全銘柄ユニバースでも、全4,000銘柄超の正式会社名・業種・市場区分が100%完全に表示される。
-  - `jpx400Data.ts` の直近配当金予想（またはキャッシュ内の最新公式開示 `extractLatestDps`）とリアルタイム終値を掛け合わせ、**リアルタイム配当利回り**を即座に算出。配当未確認銘柄に対する根拠のない推計値（EPS×35%等）は完全に排除し、公式開示の正確性を保証。
-  - レートリミット（60回/分）を圧迫せず、クライアント側でミリ秒単位の複合フィルタリング（利回り、PER、PBR、時価総額、出来高、33業種、社名検索）を実現。
-  - **初期デフォルト条件**: 配当利回り **2.5% 以上**、出来高 **500,000株（50万株）以上**（JPX日経400ユニバース）。「フィルターをリセット」時も本デフォルト条件に復元。
+  - レートリミット（60回/分）を圧迫せず、クライアント側でミリ秒単位の複合フィルタリング（利回り、PER、PBR、時価総額、売買代金、33業種、社名検索）を実現。
+  - **初期デフォルト条件**: 配当利回り **2.5% 以上**、売買代金 **5億円以上**（JPX日経400ユニバース）。「フィルターをリセット」時も本デフォルト条件に復元。
+  - **一覧テーブル構成**: コード、社名、市場、業種、株価、前日比、配当利回り、時価総額、売買代金、出来高、PER、PBR、ROE（配当金列を売買代金列へ最適化し出来高と併記）。
 - **ブックマーク連携**: スクリーニング結果から個別または一括でウォッチリストへ登録可能。銘柄クリックでチャート画面へシームレス遷移。
 
 ### ② ウォッチリスト・多角財務指標比較機能 (持続力・還元方針・事業基盤)

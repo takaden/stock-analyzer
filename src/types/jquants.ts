@@ -203,6 +203,7 @@ export interface ScreenerStock {
   priceChange: number | null;
   priceChangePercent: number | null;
   volume: number;
+  tradingValue: number; // 売買代金 (円)
   marketCap: number | null; // 百万円
   dpsAnnual: number | null; // 1株配当金 (円)
   dividendYield: number | null; // %
@@ -223,7 +224,7 @@ export interface ScreenerFilters {
   maxPer: number | null;
   maxPbr: number | null;
   minMarketCapOku: number | null; // 億円単位
-  minVolume: number | null; // 株数単位
+  minTradingValueOku: number | null; // 億円単位 (売買代金)
   sector: string; // 'all' または 33業種名
   searchQuery: string; // コードまたは社名
 }
@@ -234,7 +235,7 @@ export const DEFAULT_SCREENER_FILTERS: ScreenerFilters = {
   maxPer: null,
   maxPbr: null,
   minMarketCapOku: null,
-  minVolume: 500000,
+  minTradingValueOku: 5,
   sector: 'all',
   searchQuery: '',
 };

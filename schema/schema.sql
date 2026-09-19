@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS calculated_metrics (
 );
 
 -- 6. スクリーナー配信用統合ビュー
+DROP VIEW IF EXISTS v_screener_stocks;
 CREATE VIEW IF NOT EXISTS v_screener_stocks AS
 SELECT
   s.code,
@@ -131,6 +132,7 @@ SELECT
   q.price_change AS priceChange,
   q.price_change_percent AS priceChangePercent,
   COALESCE(q.volume, 0) AS volume,
+  CAST(COALESCE(q.close, 0) * COALESCE(q.volume, 0) AS REAL) AS tradingValue,
   COALESCE(q.market_cap, 0) AS marketCap,
   m.dps_annual AS dpsAnnual,
   m.dividend_yield AS dividendYield,
