@@ -23,6 +23,15 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
     for (const it of items) {
       if (globalFinancialsCache.has(it.code)) {
         initial[it.code] = globalFinancialsCache.get(it.code)!;
+      } else {
+        const cachedFins = cacheService.getFinsSummary(it.code);
+        if (cachedFins && cachedFins.length > 0) {
+          const fin = calculateWatchlistFinancials(cachedFins, it.currentPrice, it.dpsAnnual);
+          if (fin) {
+            globalFinancialsCache.set(it.code, fin);
+            initial[it.code] = fin;
+          }
+        }
       }
     }
     return initial;
@@ -52,6 +61,7 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
   });
 
   const isCancelledRef = useRef(false);
+  const executionSeqRef = useRef(0);
   const itemsRef = useRef(items);
   const prevCodesRef = useRef<Set<string>>(new Set(items.map((it) => it.code)));
   const isInitialMountRef = useRef(true);
@@ -64,9 +74,14 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
   const itemCodesKey = useMemo(() => items.map((it) => it.code).sort().join(','), [items]);
 
   const loadFinancials = useCallback(async (forceRefresh = false, targetCodes?: string[]) => {
+    const currentSeq = ++executionSeqRef.current;
+    const isCurrent = () => !isCancelledRef.current && executionSeqRef.current === currentSeq;
+
     const currentItems = itemsRef.current;
     if (currentItems.length === 0) {
-      setProgress({ current: 0, total: 0, isLoading: false, error: null });
+      if (isCurrent()) {
+        setProgress({ current: 0, total: 0, isLoading: false, error: null });
+      }
       return;
     }
 
@@ -85,10 +100,18 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
         const res = await fetch(`${BASE_URL}/api/watchlist-metrics?codes=${codesStr}`);
         if (res.ok) {
           const json = await res.json();
+          if (!isCurrent()) return;
           if (json && json.data) {
             Object.entries(json.data).forEach(([code, data]: [string, any]) => {
               if (data) {
-                globalFinancialsCache.set(code, data);
+                // 既存の完全なキャッシュ（5期CF等）がある場合は上書きせずマージ
+                const existing = globalFinancialsCache.get(code);
+                if (existing && existing.cfHistory && existing.cfHistory.length >= 5) {
+                  globalFinancialsCache.set(code, { ...data, ...existing });
+                } else {
+                  globalFinancialsCache.set(code, data);
+                }
+
                 if (data.betaAnalysis) {
                   globalBetaCache.set(code, data.betaAnalysis);
                   cacheService.setBetaAnalysis(code, data.betaAnalysis);
@@ -102,6 +125,8 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       }
     }
 
+    if (!isCurrent()) return;
+
     // 1. ローカルキャッシュおよびグローバルメモリにあるものを同期的に即座に反映
     let topixBars = cacheService.getTopixBars();
     const initialFinsMap: Record<string, WatchlistFinancials | null> = {};
@@ -111,13 +136,13 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
     for (const item of itemsToProcess) {
       // (A) 財務指標の確認 (グローバルメモリ -> 財務サマリーキャッシュから計算)
       let fin = !forceRefresh ? (globalFinancialsCache.get(item.code) ?? null) : null;
-      if (!fin && !forceRefresh) {
-        const cachedFins = cacheService.getFinsSummary(item.code);
-        if (cachedFins && cachedFins.length > 0) {
-          fin = calculateWatchlistFinancials(cachedFins, item.currentPrice, item.dpsAnnual);
-          if (fin) {
-            globalFinancialsCache.set(item.code, fin);
-          }
+      // D1データが5期未満の場合、ローカルキャッシュに過去開示があれば完全な5期推移を計算してマージ
+      const cachedFins = !forceRefresh ? cacheService.getFinsSummary(item.code) : null;
+      if (cachedFins && cachedFins.length > 0 && (!fin || !fin.cfHistory || fin.cfHistory.length < 5)) {
+        const calculated = calculateWatchlistFinancials(cachedFins, item.currentPrice, item.dpsAnnual);
+        if (calculated) {
+          fin = fin ? { ...fin, ...calculated } : calculated;
+          globalFinancialsCache.set(item.code, fin);
         }
       }
 
@@ -147,11 +172,15 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       if (fin) initialFinsMap[item.code] = fin;
       if (beta) initialBetaMap[item.code] = beta;
 
-      // 財務データがない場合のみ、フォールバックフェッチ対象とする (D1から取得済みの銘柄は即座に描画完了)
-      if (!fin) {
+      // 財務データがない、または5期CF履歴が不足している場合 (< 5期)、補完フェッチ対象とする
+      const needsFullFins = !fin || !fin.cfHistory || fin.cfHistory.length < 5;
+      const needsBeta = !beta;
+      if (needsFullFins || needsBeta) {
         uncachedItems.push(item);
       }
     }
+
+    if (!isCurrent()) return;
 
     setFinancialsMap((prev) => ({ ...prev, ...initialFinsMap }));
     setBetaMap((prev) => ({ ...prev, ...initialBetaMap }));
@@ -159,24 +188,27 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
     // 全てキャッシュから即座に解決できた場合:
     // プログレスバーを一瞬たりとも表示させずに直ちに完了状態とする
     if (uncachedItems.length === 0) {
-      setProgress({
-        current: currentItems.length,
-        total: currentItems.length,
-        isLoading: false,
-        error: null,
-      });
+      if (isCurrent()) {
+        setProgress({
+          current: currentItems.length,
+          total: currentItems.length,
+          isLoading: false,
+          error: null,
+        });
+      }
       return;
     }
 
-    // 未キャッシュ銘柄が存在する場合のみ、プログレスバーをアクティブにして非同期フェッチ開始
-    isCancelledRef.current = false;
+    // 未キャッシュまたはデータ補完対象銘柄が存在する場合のみ、プログレスバーをアクティブにして非同期フェッチ開始
     let loadedCount = currentItems.length - uncachedItems.length;
-    setProgress({
-      current: loadedCount,
-      total: currentItems.length,
-      isLoading: true,
-      error: null,
-    });
+    if (isCurrent()) {
+      setProgress({
+        current: loadedCount,
+        total: currentItems.length,
+        isLoading: true,
+        error: null,
+      });
+    }
 
     // TOPIX 日足データの確保 (未キャッシュならAPIから取得)
     if (!topixBars || topixBars.length === 0) {
@@ -187,37 +219,43 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       }
     }
 
-    // 2. 未キャッシュ銘柄を順次取得 (財務 ＋ 日足株価)
+    if (!isCurrent()) return;
+
+    // 2. 未完全・未キャッシュ銘柄を順次取得 (財務 ＋ 日足株価)
     for (const item of uncachedItems) {
-      if (isCancelledRef.current) break;
+      if (!isCurrent()) break;
 
       // レートリミット保護チェック: 残り枠がわずかな場合は安全待機
       const rateState = getRateLimitState();
       if (rateState.remainingThisMinute <= 3 && rateState.nextResetSeconds > 0) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(rateState.nextResetSeconds * 1000, 3000)));
-        if (isCancelledRef.current) break;
+        if (!isCurrent()) break;
       }
 
-      // (A) 財務サマリーの取得
+      // (A) 財務サマリーの取得 (未キャッシュまたは5期推移データ不足の場合に補完フェッチ)
       let fin = globalFinancialsCache.get(item.code) ?? null;
-      if (!fin || forceRefresh) {
+      const needsFullFins = !fin || !fin.cfHistory || fin.cfHistory.length < 5;
+      if (needsFullFins || forceRefresh) {
         const cachedFins = !forceRefresh ? cacheService.getFinsSummary(item.code) : null;
-        let fins = cachedFins;
-        if (!fins || fins.length === 0) {
+        let fins = cachedFins && cachedFins.length >= 5 ? cachedFins : null;
+        if (!fins) {
           try {
             fins = await fetchFinsSummary(item.code, forceRefresh);
           } catch (err: any) {
             console.warn(`Failed to fetch financials for ${item.code}:`, err);
           }
-          if (isCancelledRef.current) break;
+          if (!isCurrent()) break;
         }
         if (fins && fins.length > 0) {
-          fin = calculateWatchlistFinancials(fins, item.currentPrice, item.dpsAnnual);
-          if (fin) {
-            globalFinancialsCache.set(item.code, fin);
+          const calculatedFin = calculateWatchlistFinancials(fins, item.currentPrice, item.dpsAnnual);
+          if (calculatedFin) {
+            fin = fin ? { ...fin, ...calculatedFin } : calculatedFin;
+            if (isCurrent()) {
+              globalFinancialsCache.set(item.code, fin);
+            }
           }
         }
-        if (isCancelledRef.current) break;
+        if (!isCurrent()) break;
         setFinancialsMap((prev) => ({ ...prev, [item.code]: fin }));
       }
 
@@ -232,29 +270,33 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
           } catch (err: any) {
             console.warn(`Failed to fetch daily bars for ${item.code}:`, err);
           }
-          if (isCancelledRef.current) break;
+          if (!isCurrent()) break;
         }
 
         if (bars && bars.length > 0 && topixBars && topixBars.length > 0) {
           const calculatedBeta = calculateBeta(bars, topixBars);
           if (calculatedBeta) {
             beta = calculatedBeta;
-            globalBetaCache.set(item.code, calculatedBeta);
-            cacheService.setBetaAnalysis(item.code, calculatedBeta);
+            if (isCurrent()) {
+              globalBetaCache.set(item.code, calculatedBeta);
+              cacheService.setBetaAnalysis(item.code, calculatedBeta);
 
-            // 既存の完全なキャッシュが存在する場合のみ、日足とベータ値を更新して保存
-            if (stockCached) {
-              stockCached.historicalBars = bars;
-              stockCached.betaAnalysis = calculatedBeta;
-              cacheService.setStock(item.code, stockCached);
+              // 既存の完全なキャッシュが存在する場合のみ、日足とベータ値を更新して保存
+              if (stockCached) {
+                stockCached.historicalBars = bars;
+                stockCached.betaAnalysis = calculatedBeta;
+                cacheService.setStock(item.code, stockCached);
+              }
             }
           }
         }
+        if (!isCurrent()) break;
         setBetaMap((prev) => ({ ...prev, [item.code]: beta }));
       }
 
       // レートリミット保護ウェイト (Lightプラン: 60回/分)
       await new Promise((resolve) => setTimeout(resolve, 250));
+      if (!isCurrent()) break;
 
       loadedCount++;
       setProgress((prev) => ({
@@ -263,10 +305,12 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       }));
     }
 
-    setProgress((prev) => ({
-      ...prev,
-      isLoading: false,
-    }));
+    if (isCurrent()) {
+      setProgress((prev) => ({
+        ...prev,
+        isLoading: false,
+      }));
+    }
   }, []);
 
   // 銘柄コードリストの変更検知 & 差分更新 (Diffing)
