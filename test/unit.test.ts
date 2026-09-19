@@ -1148,6 +1148,71 @@ test('filterUnprocessedTradingDates (Catch-up sync date resolution)', async (t) 
   });
 });
 
+test('watchlist financials 5-period CF history enrichment', async (t) => {
+  await t.test('enriches 1-period D1 data with full 5-period CF history and preserves existing metrics', () => {
+    // 1. D1 から返却される初期データ (直近1期分のみ)
+    const d1InitialData = {
+      dpsAnnual: 100,
+      dpsType: 'forecast',
+      dividendYield: 3.3,
+      latestCfo: 5472920,
+      latestCfi: -1520307,
+      latestFcf: 3952613,
+      cfHistory: [
+        {
+          periodLabel: '2026/03期',
+          curPerEn: '2026-03-31',
+          cfo: 5472920,
+          cfi: -1520307,
+          fcf: 3952613,
+        },
+      ],
+      fcfPositiveCount: 1,
+      fcfTotalCount: 1,
+      isFcfConsistentlyPositive: true,
+      nonReductionYears: 4,
+      isNoDividendCut5Years: true,
+      equityRatio: 37.8,
+      payoutRatio: 26.4,
+      doe: 3.3,
+      betaAnalysis: {
+        beta1Year: 0.75,
+        category: 'defensive',
+        label: 'ディフェンシブ',
+        badgeEmoji: '🛡️',
+      },
+    };
+
+    assert.equal(d1InitialData.cfHistory.length, 1);
+    assert.equal(d1InitialData.fcfTotalCount, 1);
+
+    // 2. 過去5年分の開示サマリーから完全な財務指標を計算
+    const mock5YearFins = [
+      { DiscDate: '2022-05-11', CurPerType: 'FY', CurPerEn: '2022-03-31', CFO: '3722615000000', CFI: '-577496000000', DivAnn: '52.0' },
+      { DiscDate: '2023-05-10', CurPerType: 'FY', CurPerEn: '2023-03-31', CFO: '2955076000000', CFI: '-1598890000000', DivAnn: '60.0' },
+      { DiscDate: '2024-05-08', CurPerType: 'FY', CurPerEn: '2024-03-31', CFO: '4206373000000', CFI: '-4998751000000', DivAnn: '75.0' },
+      { DiscDate: '2025-05-08', CurPerType: 'FY', CurPerEn: '2025-03-31', CFO: '4500000000000', CFI: '-5000000000000', DivAnn: '90.0' },
+      { DiscDate: '2026-05-08', CurPerType: 'FY', CurPerEn: '2026-03-31', CFO: '5472920000000', CFI: '-1520307000000', DivAnn: '95.0', FDivAnn: '100.0' },
+    ];
+    const fullFinancials = calculateWatchlistFinancials(mock5YearFins as any, 3000, 100);
+    assert.ok(fullFinancials);
+    assert.equal(fullFinancials.cfHistory.length, 5);
+    assert.equal(fullFinancials.fcfTotalCount, 5);
+
+    // 3. エンリッチメント (マージ)
+    const enriched = { ...d1InitialData, ...fullFinancials };
+
+    // 検証: 5期推移とFCF恒常性が5期分にアップデートされ、D1由来のベータ値等も保持されていること
+    assert.equal(enriched.cfHistory.length, 5);
+    assert.equal(enriched.cfHistory[0].periodLabel, '2022/03期');
+    assert.equal(enriched.cfHistory[4].periodLabel, '2026/03期');
+    assert.equal(enriched.fcfPositiveCount, 3);
+    assert.equal(enriched.fcfTotalCount, 5);
+    assert.equal(enriched.isFcfConsistentlyPositive, true);
+    assert.equal(enriched.betaAnalysis?.badgeEmoji, '🛡️');
+  });
+});
+
 
 
 

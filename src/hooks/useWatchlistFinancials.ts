@@ -23,6 +23,15 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
     for (const it of items) {
       if (globalFinancialsCache.has(it.code)) {
         initial[it.code] = globalFinancialsCache.get(it.code)!;
+      } else {
+        const cachedFins = cacheService.getFinsSummary(it.code);
+        if (cachedFins && cachedFins.length >= 2) {
+          const fin = calculateWatchlistFinancials(cachedFins, it.currentPrice, it.dpsAnnual);
+          if (fin) {
+            globalFinancialsCache.set(it.code, fin);
+            initial[it.code] = fin;
+          }
+        }
       }
     }
     return initial;
@@ -88,7 +97,14 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
           if (json && json.data) {
             Object.entries(json.data).forEach(([code, data]: [string, any]) => {
               if (data) {
-                globalFinancialsCache.set(code, data);
+                // 既存の完全なキャッシュ（5期CF等）がある場合は上書きせずマージ
+                const existing = globalFinancialsCache.get(code);
+                if (existing && existing.cfHistory && existing.cfHistory.length >= 2) {
+                  globalFinancialsCache.set(code, { ...data, ...existing });
+                } else {
+                  globalFinancialsCache.set(code, data);
+                }
+
                 if (data.betaAnalysis) {
                   globalBetaCache.set(code, data.betaAnalysis);
                   cacheService.setBetaAnalysis(code, data.betaAnalysis);
@@ -111,13 +127,13 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
     for (const item of itemsToProcess) {
       // (A) 財務指標の確認 (グローバルメモリ -> 財務サマリーキャッシュから計算)
       let fin = !forceRefresh ? (globalFinancialsCache.get(item.code) ?? null) : null;
-      if (!fin && !forceRefresh) {
-        const cachedFins = cacheService.getFinsSummary(item.code);
-        if (cachedFins && cachedFins.length > 0) {
-          fin = calculateWatchlistFinancials(cachedFins, item.currentPrice, item.dpsAnnual);
-          if (fin) {
-            globalFinancialsCache.set(item.code, fin);
-          }
+      // D1データが1期分のみの場合、ローカルキャッシュに過去開示があれば完全な5期推移を計算してマージ
+      const cachedFins = !forceRefresh ? cacheService.getFinsSummary(item.code) : null;
+      if (cachedFins && cachedFins.length >= 2 && (!fin || !fin.cfHistory || fin.cfHistory.length < 2)) {
+        const calculated = calculateWatchlistFinancials(cachedFins, item.currentPrice, item.dpsAnnual);
+        if (calculated) {
+          fin = fin ? { ...fin, ...calculated } : calculated;
+          globalFinancialsCache.set(item.code, fin);
         }
       }
 
@@ -147,8 +163,10 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       if (fin) initialFinsMap[item.code] = fin;
       if (beta) initialBetaMap[item.code] = beta;
 
-      // 財務データがない場合のみ、フォールバックフェッチ対象とする (D1から取得済みの銘柄は即座に描画完了)
-      if (!fin) {
+      // 財務データがない、または5期CF履歴が不足している場合、補完フェッチ対象とする
+      const needsFullFins = !fin || !fin.cfHistory || fin.cfHistory.length < 2;
+      const needsBeta = !beta;
+      if (needsFullFins || needsBeta) {
         uncachedItems.push(item);
       }
     }
@@ -168,7 +186,7 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       return;
     }
 
-    // 未キャッシュ銘柄が存在する場合のみ、プログレスバーをアクティブにして非同期フェッチ開始
+    // 未キャッシュまたはデータ補完対象銘柄が存在する場合のみ、プログレスバーをアクティブにして非同期フェッチ開始
     isCancelledRef.current = false;
     let loadedCount = currentItems.length - uncachedItems.length;
     setProgress({
@@ -187,7 +205,7 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
       }
     }
 
-    // 2. 未キャッシュ銘柄を順次取得 (財務 ＋ 日足株価)
+    // 2. 未完全・未キャッシュ銘柄を順次取得 (財務 ＋ 日足株価)
     for (const item of uncachedItems) {
       if (isCancelledRef.current) break;
 
@@ -198,12 +216,13 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
         if (isCancelledRef.current) break;
       }
 
-      // (A) 財務サマリーの取得
+      // (A) 財務サマリーの取得 (未キャッシュまたは5期推移データ不足の場合に補完フェッチ)
       let fin = globalFinancialsCache.get(item.code) ?? null;
-      if (!fin || forceRefresh) {
+      const needsFullFins = !fin || !fin.cfHistory || fin.cfHistory.length < 2;
+      if (needsFullFins || forceRefresh) {
         const cachedFins = !forceRefresh ? cacheService.getFinsSummary(item.code) : null;
-        let fins = cachedFins;
-        if (!fins || fins.length === 0) {
+        let fins = cachedFins && cachedFins.length >= 2 ? cachedFins : null;
+        if (!fins) {
           try {
             fins = await fetchFinsSummary(item.code, forceRefresh);
           } catch (err: any) {
@@ -212,8 +231,9 @@ export function useWatchlistFinancials(items: WatchlistItem[]) {
           if (isCancelledRef.current) break;
         }
         if (fins && fins.length > 0) {
-          fin = calculateWatchlistFinancials(fins, item.currentPrice, item.dpsAnnual);
-          if (fin) {
+          const calculatedFin = calculateWatchlistFinancials(fins, item.currentPrice, item.dpsAnnual);
+          if (calculatedFin) {
+            fin = fin ? { ...fin, ...calculatedFin } : calculatedFin;
             globalFinancialsCache.set(item.code, fin);
           }
         }
