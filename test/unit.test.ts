@@ -1211,6 +1211,56 @@ test('watchlist financials 5-period CF history enrichment', async (t) => {
     assert.equal(enriched.isFcfConsistentlyPositive, true);
     assert.equal(enriched.betaAnalysis?.badgeEmoji, '🛡️');
   });
+
+  await t.test('boundary: 2-period CF history is recognized as incomplete (< 5) and enriches to 5 periods', () => {
+    const mock5YearFins = [
+      { DiscDate: '2022-05-11', CurPerType: 'FY', CurPerEn: '2022-03-31', CFO: '3722615000000', CFI: '-577496000000', DivAnn: '52.0' },
+      { DiscDate: '2023-05-10', CurPerType: 'FY', CurPerEn: '2023-03-31', CFO: '2955076000000', CFI: '-1598890000000', DivAnn: '60.0' },
+      { DiscDate: '2024-05-08', CurPerType: 'FY', CurPerEn: '2024-03-31', CFO: '4206373000000', CFI: '-4998751000000', DivAnn: '75.0' },
+      { DiscDate: '2025-05-08', CurPerType: 'FY', CurPerEn: '2025-03-31', CFO: '4500000000000', CFI: '-5000000000000', DivAnn: '90.0' },
+      { DiscDate: '2026-05-08', CurPerType: 'FY', CurPerEn: '2026-03-31', CFO: '5472920000000', CFI: '-1520307000000', DivAnn: '95.0', FDivAnn: '100.0' },
+    ];
+
+    const d1TwoPeriodData = {
+      cfHistory: [
+        { periodLabel: '2025/03期', curPerEn: '2025-03-31', cfo: 4500000, cfi: -5000000, fcf: -500000 },
+        { periodLabel: '2026/03期', curPerEn: '2026-03-31', cfo: 5472920, cfi: -1520307, fcf: 3952613 },
+      ],
+    };
+
+    const needsFullFins = !d1TwoPeriodData || !d1TwoPeriodData.cfHistory || d1TwoPeriodData.cfHistory.length < 5;
+    assert.equal(needsFullFins, true, '2-period data must be flagged as incomplete (< 5)');
+
+    const fullFinancials = calculateWatchlistFinancials(mock5YearFins as any, 3000, 100);
+    const enriched = { ...d1TwoPeriodData, ...fullFinancials };
+    assert.equal(enriched.cfHistory.length, 5);
+  });
+
+  await t.test('boundary: 4-period CF history is recognized as incomplete (< 5) and enriches to 5 periods', () => {
+    const mock5YearFins = [
+      { DiscDate: '2022-05-11', CurPerType: 'FY', CurPerEn: '2022-03-31', CFO: '3722615000000', CFI: '-577496000000', DivAnn: '52.0' },
+      { DiscDate: '2023-05-10', CurPerType: 'FY', CurPerEn: '2023-03-31', CFO: '2955076000000', CFI: '-1598890000000', DivAnn: '60.0' },
+      { DiscDate: '2024-05-08', CurPerType: 'FY', CurPerEn: '2024-03-31', CFO: '4206373000000', CFI: '-4998751000000', DivAnn: '75.0' },
+      { DiscDate: '2025-05-08', CurPerType: 'FY', CurPerEn: '2025-03-31', CFO: '4500000000000', CFI: '-5000000000000', DivAnn: '90.0' },
+      { DiscDate: '2026-05-08', CurPerType: 'FY', CurPerEn: '2026-03-31', CFO: '5472920000000', CFI: '-1520307000000', DivAnn: '95.0', FDivAnn: '100.0' },
+    ];
+
+    const d1FourPeriodData = {
+      cfHistory: [
+        { periodLabel: '2023/03期', curPerEn: '2023-03-31', cfo: 2955076, cfi: -1598890, fcf: 1356186 },
+        { periodLabel: '2024/03期', curPerEn: '2024-03-31', cfo: 4206373, cfi: -4998751, fcf: -792378 },
+        { periodLabel: '2025/03期', curPerEn: '2025-03-31', cfo: 4500000, cfi: -5000000, fcf: -500000 },
+        { periodLabel: '2026/03期', curPerEn: '2026-03-31', cfo: 5472920, cfi: -1520307, fcf: 3952613 },
+      ],
+    };
+
+    const needsFullFins = !d1FourPeriodData || !d1FourPeriodData.cfHistory || d1FourPeriodData.cfHistory.length < 5;
+    assert.equal(needsFullFins, true, '4-period data must be flagged as incomplete (< 5)');
+
+    const fullFinancials = calculateWatchlistFinancials(mock5YearFins as any, 3000, 100);
+    const enriched = { ...d1FourPeriodData, ...fullFinancials };
+    assert.equal(enriched.cfHistory.length, 5);
+  });
 });
 
 

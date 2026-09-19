@@ -86,15 +86,25 @@ function getD1Database(): any | null {
     // @ts-ignore
     const { DatabaseSync } = require('node:sqlite')
     for (const file of dbFiles) {
+      let db: any = null
+      let isSelected = false
       try {
-        const db = new DatabaseSync(path.join(d1Dir, file))
+        db = new DatabaseSync(path.join(d1Dir, file))
         const hasTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = 'v_screener_stocks'").get()
         if (hasTable) {
+          isSelected = true
           return db
         }
-        db.close()
       } catch {
         // 次の候補ファイルを試行
+      } finally {
+        if (!isSelected && db) {
+          try {
+            db.close()
+          } catch {
+            // ignore
+          }
+        }
       }
     }
   } catch (e) {
