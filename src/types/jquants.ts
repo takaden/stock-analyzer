@@ -10,6 +10,7 @@ export interface EquityMaster {
   ScaleCat?: string;
   Mkt?: string;
   MktNm?: string;
+  ProdCat?: string;
 }
 
 export interface DailyBar {

@@ -76,73 +76,12 @@ async function requestWithRateLimit<T>(path: string, params: Record<string, stri
   throw new Error(`Failed request to ${path} after retries.`);
 }
 
-export interface RawMaster {
-  Date: string;
-  Code: string;
-  CoName: string;
-  MktNm: string;
-  S33Nm: string;
-  ScaleCat: string;
-  ProdCat: string;
-}
+import type { EquityMaster, DailyBar, ValuationItem, FinSummary, TopixBar } from '../../src/types/jquants.ts';
 
-export interface RawDailyBar {
-  Date: string;
-  Code: string;
-  O: number;
-  H: number;
-  L: number;
-  C: number;
-  Vo: number;
-  AdjC: number;
-  MktCap?: number;
-}
-
-export interface RawValuation {
-  Date: string;
-  Code: string;
-  PER?: number;
-  FwdPER?: number;
-  PBR?: number;
-  ROE?: number;
-  FwdROE?: number;
-  MktCap?: number;
-}
-
-export interface RawFinSummary {
-  DiscDate: string;
-  DiscTime: string;
-  Code: string;
-  DiscNo: string;
-  DocType: string;
-  CurPerType: string;
-  CurFYEn: string;
-  CurPerEn: string;
-  Sales?: string;
-  OP?: string;
-  OdP?: string;
-  NP?: string;
-  EPS?: string;
-  FEPS?: string;
-  BPS?: string;
-  CFO?: string;
-  CFI?: string;
-  CFF?: string;
-  TA?: string;
-  Eq?: string;
-  ShEq?: string;
-  EqAR?: string;
-  DivAnn?: string;
-  FDivAnn?: string;
-  Div2Q?: string;
-  FDiv2Q?: string;
-  DivFY?: string;
-  FDivFY?: string;
-  PayoutRatioAnn?: string;
-  FPayoutRatioAnn?: string;
-  ROE?: string;
-  [key: string]: any;
-}
+export type RawMaster = EquityMaster;
+export type RawDailyBar = DailyBar;
+export type RawValuation = ValuationItem;
+export type RawFinSummary = FinSummary;
 
 /** 全銘柄マスター取得 */
 export async function fetchAllMasters(): Promise<RawMaster[]> {
@@ -281,7 +220,7 @@ export async function fetchFinsByCode(code: string): Promise<RawFinSummary[]> {
 }
 
 /** TOPIX ベンチマーク日足の取得 */
-export async function fetchTopixBars(): Promise<{ Date: string; O: number; H: number; L: number; C: number }[]> {
+export async function fetchTopixBars(): Promise<TopixBar[]> {
   console.log('📡 Fetching TOPIX daily bars...');
   let allBars: any[] = [];
   let paginationKey: string | null = null;
@@ -296,3 +235,6 @@ export async function fetchTopixBars(): Promise<{ Date: string; O: number; H: nu
 
   return allBars.sort((a, b) => a.Date.localeCompare(b.Date));
 }
+
+/** TOPIX 日足取得の共通エイリアス */
+export const fetchTopixDailyBars = fetchTopixBars;

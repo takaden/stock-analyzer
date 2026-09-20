@@ -10,18 +10,12 @@ import {
   RawFinSummary,
 } from './lib/jquantsClient';
 import { buildCalculatedMetricsRow } from './lib/metricsCalculator';
+import { escapeSql } from './lib/sqlUtils';
 import type { FinSummary } from '../src/types/jquants';
 
 const CACHE_DIR = path.resolve('batch/.cache');
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
-}
-
-function escapeSql(val: any): string {
-  if (val === null || val === undefined) return 'NULL';
-  if (typeof val === 'number') return isNaN(val) ? 'NULL' : String(val);
-  if (typeof val === 'boolean') return val ? '1' : '0';
-  return `'${String(val).replace(/'/g, "''")}'`;
 }
 
 async function main() {
