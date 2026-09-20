@@ -237,6 +237,63 @@ test('screener filters', async (t) => {
     assert.equal(DEFAULT_SCREENER_FILTERS.minTradingValueOku, 5);
     assert.equal(DEFAULT_SCREENER_FILTERS.universe, 'jpx400');
   });
+
+  await t.test('screener dynamic cache enrichment: overwrites old D1 dividend (154 yen) with latest cachedFins (78 yen / 2.24%)', async () => {
+    const { cacheService } = await import('../src/services/cacheService.ts');
+    const { extractLatestDps } = await import('../src/utils/indicators.ts');
+
+    // モックのD1返却アイテム（古いデータ 154円 / 4.41%）
+    const d1Item = {
+      code: '4452',
+      name: '花王',
+      currentPrice: 3478,
+      dpsAnnual: 154,
+      dividendYield: 4.43,
+    };
+
+    // キャッシュに最新開示（期中分割後 78円）を保存
+    const kaoFins = [
+      {
+        DiscDate: '2026-02-05',
+        CurPerType: 'FY',
+        DivAnn: '154.0',
+        ShOutFY: '453600000',
+      },
+      {
+        DiscDate: '2026-08-05',
+        CurPerType: '2Q',
+        Div2Q: '78.0',
+        FDivFY: '39.0',
+        FDivAnn: '',
+        ShOutFY: '907200000',
+      },
+    ];
+    cacheService.setFinsSummary('4452', kaoFins as any);
+
+    // useScreener のマッピングロジックをシミュレート
+    let dpsAnnual = d1Item.dpsAnnual;
+    let dividendYield = d1Item.dividendYield;
+
+    const cachedFins = cacheService.getFinsSummary(d1Item.code);
+    const cachedStock = cacheService.getStock(d1Item.code);
+    if (cachedFins && cachedFins.length > 0) {
+      const { dpsAnnual: extDps } = extractLatestDps(cachedFins);
+      if (extDps != null) {
+        dpsAnnual = extDps;
+        dividendYield = d1Item.currentPrice > 0 ? (dpsAnnual / d1Item.currentPrice) * 100 : null;
+      }
+    } else if (cachedStock?.dpsAnnual != null) {
+      dpsAnnual = cachedStock.dpsAnnual;
+      dividendYield = cachedStock.dividendYield;
+    }
+
+    // 154円ではなく78円に補正され、利回りも2.24%になること
+    assert.equal(dpsAnnual, 78);
+    assert.equal(Math.round(dividendYield! * 100) / 100, 2.24);
+
+    // クリーンアップ
+    cacheService.clearAllStockCache();
+  });
 });
 
 test('calculateWatchlistFinancials', async (t) => {

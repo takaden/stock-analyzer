@@ -45,35 +45,54 @@ export function useScreener() {
         if (res.ok) {
           const json = await res.json();
           if (json && Array.isArray(json.data) && json.data.length > 0) {
-            const list: ScreenerStock[] = json.data.map((item: any) => ({
-              code: item.code,
-              rawCode: item.rawCode,
-              name: item.name,
-              market: item.market,
-              sector: item.sector,
-              scaleCat: item.scaleCat,
-              currentPrice: item.currentPrice,
-              previousClose: item.previousClose,
-              priceChange: item.priceChange,
-              priceChangePercent: item.priceChangePercent,
-              volume: item.volume,
-              tradingValue:
-                item.tradingValue != null
-                  ? item.tradingValue
-                  : item.currentPrice && item.volume
-                    ? item.currentPrice * item.volume
-                    : 0,
-              marketCap: item.marketCap,
-              dpsAnnual: item.dpsAnnual,
-              dividendYield: item.dividendYield,
-              per: item.per,
-              fwdPer: item.fwdPer,
-              pbr: item.pbr,
-              roe: item.roe,
-              isJpx400: Boolean(item.isJpx400),
-              isTopix100: Boolean(item.isTopix100),
-              isPrime: Boolean(item.isPrime),
-            }));
+            const list: ScreenerStock[] = json.data.map((item: any) => {
+              let dpsAnnual = item.dpsAnnual;
+              let dividendYield = item.dividendYield;
+
+              // ローカルキャッシュに個別詳細または財務開示がある場合は最新公式開示・新ロジックで動的補正
+              const cachedFins = cacheService.getFinsSummary(item.code);
+              const cachedStock = cacheService.getStock(item.code);
+              if (cachedFins && cachedFins.length > 0) {
+                const { dpsAnnual: extDps } = extractLatestDps(cachedFins);
+                if (extDps != null) {
+                  dpsAnnual = extDps;
+                  dividendYield = item.currentPrice > 0 ? (dpsAnnual / item.currentPrice) * 100 : null;
+                }
+              } else if (cachedStock?.dpsAnnual != null) {
+                dpsAnnual = cachedStock.dpsAnnual;
+                dividendYield = cachedStock.dividendYield;
+              }
+
+              return {
+                code: item.code,
+                rawCode: item.rawCode,
+                name: item.name,
+                market: item.market,
+                sector: item.sector,
+                scaleCat: item.scaleCat,
+                currentPrice: item.currentPrice,
+                previousClose: item.previousClose,
+                priceChange: item.priceChange,
+                priceChangePercent: item.priceChangePercent,
+                volume: item.volume,
+                tradingValue:
+                  item.tradingValue != null
+                    ? item.tradingValue
+                    : item.currentPrice && item.volume
+                      ? item.currentPrice * item.volume
+                      : 0,
+                marketCap: item.marketCap,
+                dpsAnnual,
+                dividendYield,
+                per: item.per,
+                fwdPer: item.fwdPer,
+                pbr: item.pbr,
+                roe: item.roe,
+                isJpx400: Boolean(item.isJpx400),
+                isTopix100: Boolean(item.isTopix100),
+                isPrime: Boolean(item.isPrime),
+              };
+            });
             setAllStocks(list);
             if (json.data[0]?.latestDate) {
               setLatestDate(json.data[0].latestDate);
@@ -130,14 +149,14 @@ export function useScreener() {
           prevClose && prevClose > 0 && priceChange != null ? (priceChange / prevClose) * 100 : null;
 
         // 配当金・利回り: キャッシュがあれば最新の公式開示を優先、なければマスターデータ
-        const cachedStock = cacheService.getStock(meta.code);
         const cachedFins = cacheService.getFinsSummary(meta.code);
+        const cachedStock = cacheService.getStock(meta.code);
         let dpsAnnual = meta.dpsAnnual;
-        if (cachedStock?.dpsAnnual != null) {
-          dpsAnnual = cachedStock.dpsAnnual;
-        } else if (cachedFins && cachedFins.length > 0) {
+        if (cachedFins && cachedFins.length > 0) {
           const { dpsAnnual: extDps } = extractLatestDps(cachedFins);
           if (extDps != null) dpsAnnual = extDps;
+        } else if (cachedStock?.dpsAnnual != null) {
+          dpsAnnual = cachedStock.dpsAnnual;
         }
         const dividendYield =
           dpsAnnual != null && currentPrice > 0 ? (dpsAnnual / currentPrice) * 100 : null;
@@ -193,14 +212,14 @@ export function useScreener() {
         const isTopix100 = scaleCat === 'TOPIX Core30' || scaleCat === 'TOPIX Large70';
 
         // JPX400外の銘柄: キャッシュ(個別詳細または財務サマリー)がある場合は公式開示を使用
-        const cachedStock = cacheService.getStock(code4);
         const cachedFins = cacheService.getFinsSummary(code4);
+        const cachedStock = cacheService.getStock(code4);
         let dpsAnnual: number | null = null;
-        if (cachedStock?.dpsAnnual != null) {
-          dpsAnnual = cachedStock.dpsAnnual;
-        } else if (cachedFins && cachedFins.length > 0) {
+        if (cachedFins && cachedFins.length > 0) {
           const { dpsAnnual: extDps } = extractLatestDps(cachedFins);
           if (extDps != null) dpsAnnual = extDps;
+        } else if (cachedStock?.dpsAnnual != null) {
+          dpsAnnual = cachedStock.dpsAnnual;
         }
         const dividendYield = dpsAnnual != null && bar.C > 0 ? (dpsAnnual / bar.C) * 100 : null;
 
