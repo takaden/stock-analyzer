@@ -116,11 +116,13 @@ stock-analyzer/
 ├── batch/                     # 夜間バッチ・データ収集スクリプト群 (TypeScript)
 │   ├── lib/
 │   │   ├── jquantsClient.ts   # レートリミット制御付きJ-Quants APIクライアント
-│   │   └── metricsCalculator.ts # 11指標・ベータ値事前計算ラッパー
+│   │   ├── metricsCalculator.ts # 11指標・ベータ値事前計算ラッパー
+│   │   └── sqlUtils.ts        # SQLiteクエリ生成用SQLエスケープユーティリティ
 │   ├── init_historical.ts     # 過去250営業日開示収集・初期シードSQL生成スクリプト
 │   └── sync_daily.ts          # 平日夜間差分更新バッチ (D1直接書き込み対応)
 ├── migrations/                # Cloudflare D1 順序管理マイグレーションSQL群
-│   └── 0001_add_trading_value.sql # daily_quotes trading_value列追加 & ビュー再作成
+│   ├── 0001_add_trading_value.sql # daily_quotes trading_value列追加 & ビュー再作成
+│   └── 0002_add_metrics_fields.sql # calculated_metrics 欠落カラム追加 (連続増配・自社株買い・自己資本推移)
 ├── functions/                 # Cloudflare Pages Functions (エッジ関数)
 │   └── api/
 │       ├── jq/
@@ -159,7 +161,8 @@ stock-analyzer/
 │   │   └── ApiKeyModal.tsx    # APIキー設定 & キャッシュ削除モーダル
 │   └── utils/
 │       ├── indicators.ts      # SMA計算、財務サマリー解析(FCF/DOE/ROA等11指標)、配当履歴
-│       └── formatters.ts      # 通貨・時価総額・キャッシュフロー(兆/億)・パーセントフォーマッタ
+│       ├── formatters.ts      # 通貨・時価総額・キャッシュフロー(兆/億)・パーセントフォーマッタ
+│       └── metricsMapper.ts   # D1 calculated_metrics 行からフロント用指標オブジェクトへの統一マッパー
 └── test/
     ├── unit.test.ts           # フォーマッタ・SMA・財務11指標算出・バッチ計算の単体テスト
     └── api_verify.mjs         # J-Quants API 実環境疎通確認スクリプト
@@ -185,7 +188,7 @@ npm run build
 # ローカル D1 データベースへのスキーマ適用・初期化
 npx wrangler d1 execute jquants-db --local --file=schema/schema.sql
 
-# D1 マイグレーションの適用 (trading_value 列追加・ビュー再作成)
+# D1 マイグレーションの適用 (0001: trading_value 列追加、0002: 欠落財務指標列追加)
 npm run d1:migrate:local
 npm run d1:migrate:remote
 
