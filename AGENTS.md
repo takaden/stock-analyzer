@@ -116,7 +116,8 @@ stock-analyzer/
 ├── .env.example               # 環境変数テンプレート
 ├── .github/
 │   └── workflows/
-│       └── daily_sync.yml     # 平日夜間自動実行 (18:30 JST) GitHub Actions ワークフロー
+│       ├── daily_sync.yml     # 平日夜間自動実行 (18:30 JST) GitHub Actions ワークフロー
+│       └── reset_d1.yml       # 手動実行専用 本番 D1 フルリセット (Truncate & Seed) ワークフロー
 ├── schema/
 │   ├── schema.sql             # Cloudflare D1 データベース定義 (stocks, quotes, metrics, views)
 │   └── initial_seed.sql       # 過去250営業日の全上場銘柄初期シードSQL (約6.5MB)
@@ -205,14 +206,17 @@ npx wrangler d1 execute jquants-db --local --file=schema/initial_seed.sql
 # ローカル D1 データベースの日次同期バッチ手動実行
 npx tsx batch/sync_daily.ts
 
-# 本番 D1 データベースの初期スキーマ適用 (初回のみ)
-npx wrangler d1 execute jquants-db --remote --file=schema/schema.sql
+# ローカル D1 データベースのフルリセット (全データ削除 ＋ 最新スキーマ適用 ＋ 最新シード投入)
+npx wrangler d1 execute jquants-db --local --command="DELETE FROM calculated_metrics; DELETE FROM valuations; DELETE FROM daily_quotes; DELETE FROM stocks; DELETE FROM financial_disclosures; DELETE FROM sync_cursors;"
+npx wrangler d1 execute jquants-db --local --file=schema/schema.sql
+npx wrangler d1 execute jquants-db --local --file=schema/initial_seed.sql
 
-# 本番 D1 データベースへの初期シード投入 (初回のみ)
-npx wrangler d1 execute jquants-db --remote --file=schema/initial_seed.sql
-
-# 本番 D1 データベースへの JPX400 銘柄補正適用 (492件から400件への是正)
-npx wrangler d1 execute jquants-db --remote --file=schema/fix_jpx400.sql
+# 本番 D1 データベースのフルリセット
+# 推奨: GitHub Actions の "Reset and Seed Cloudflare D1 (Full Reset)" ワークフローを手動実行 (Run workflow)
+# CLI手動実行 (Cloudflare認証済み環境):
+# npx wrangler d1 execute jquants-db --remote --command="DELETE FROM calculated_metrics; DELETE FROM valuations; DELETE FROM daily_quotes; DELETE FROM stocks; DELETE FROM financial_disclosures; DELETE FROM sync_cursors;"
+# npx wrangler d1 execute jquants-db --remote --file=schema/schema.sql
+# npx wrangler d1 execute jquants-db --remote --file=schema/initial_seed.sql
 
 # J-Quants 実APIとの疎通・データ整合性テスト
 node test/api_verify.mjs
