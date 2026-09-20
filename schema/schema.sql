@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS calculated_metrics (
   equity_growth_trend TEXT,           -- 自己資本成長トレンド ('growing', 'stable', 'decreasing')
   equity_5year_change_percent REAL,   -- 自己資本5年変化率 (%)
   payout_ratio REAL,                  -- 配当性向 (%)
-  payout_ratio_status TEXT,           -- 'healthy', 'moderate', 'warning', 'danger'
+  payout_ratio_status TEXT,           -- 'healthy', 'acceptable', 'warning', 'danger'
   doe REAL,                           -- 自己資本配当率 (%)
   is_doe_high INTEGER,
   buyback_detected INTEGER,           -- 自社株買い実施検知 (0または1)

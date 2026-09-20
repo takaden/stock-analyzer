@@ -7,7 +7,7 @@
  */
 export function escapeSql(val: any): string {
   if (val === null || val === undefined) return 'NULL';
-  if (typeof val === 'number') return isNaN(val) ? 'NULL' : String(val);
+  if (typeof val === 'number') return Number.isFinite(val) ? String(val) : 'NULL';
   if (typeof val === 'boolean') return val ? '1' : '0';
   return `'${String(val).replace(/'/g, "''")}'`;
 }

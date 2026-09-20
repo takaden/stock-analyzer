@@ -33,7 +33,10 @@ export function mapCalculatedMetricsRowToItem(r: any): WatchlistMetricsItem {
     equityGrowthTrend: r.equity_growth_trend || 'unknown',
     equity5YearChangePercent: r.equity_5year_change_percent ?? null,
     payoutRatio: r.payout_ratio,
-    payoutRatioStatus: r.payout_ratio_status,
+    payoutRatioStatus:
+      r.payout_ratio_status === 'moderate'
+        ? 'acceptable'
+        : (r.payout_ratio_status ?? 'unknown'),
     doe: doeVal,
     isDoeHigh: Boolean(r.is_doe_high),
     isDoeTopTier: doeVal != null ? doeVal >= 3.5 : false,

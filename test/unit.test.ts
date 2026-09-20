@@ -1142,6 +1142,46 @@ test('mapCalculatedMetricsRowToItem (Unified D1 row mapping)', async (t) => {
     assert.equal(item.betaAnalysis?.category, 'defensive');
     assert.equal(item.scorePassed, 9);
   });
+
+  await t.test('normalizes payout_ratio_status: converts moderate to acceptable, and falls back to unknown', () => {
+    const rowWithModerate = {
+      code: '1234',
+      payout_ratio_status: 'moderate',
+    };
+    assert.equal(mapCalculatedMetricsRowToItem(rowWithModerate).payoutRatioStatus, 'acceptable');
+
+    const rowWithNull = {
+      code: '1234',
+      payout_ratio_status: null,
+    };
+    assert.equal(mapCalculatedMetricsRowToItem(rowWithNull).payoutRatioStatus, 'unknown');
+
+    const rowWithHealthy = {
+      code: '1234',
+      payout_ratio_status: 'healthy',
+    };
+    assert.equal(mapCalculatedMetricsRowToItem(rowWithHealthy).payoutRatioStatus, 'healthy');
+  });
+});
+
+import { escapeSql } from '../batch/lib/sqlUtils.ts';
+
+test('escapeSql (Batch SQL escape utility)', async (t) => {
+  await t.test('properly handles numbers, including non-finite values (Infinity, -Infinity, NaN)', () => {
+    assert.equal(escapeSql(123.45), '123.45');
+    assert.equal(escapeSql(0), '0');
+    assert.equal(escapeSql(NaN), 'NULL');
+    assert.equal(escapeSql(Infinity), 'NULL');
+    assert.equal(escapeSql(-Infinity), 'NULL');
+  });
+
+  await t.test('handles strings, null, undefined, and booleans', () => {
+    assert.equal(escapeSql(null), 'NULL');
+    assert.equal(escapeSql(undefined), 'NULL');
+    assert.equal(escapeSql(true), '1');
+    assert.equal(escapeSql(false), '0');
+    assert.equal(escapeSql("hello 'world'"), "'hello ''world'''");
+  });
 });
 
 import { filterUnprocessedTradingDates } from '../batch/lib/jquantsClient.ts';
