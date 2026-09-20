@@ -206,15 +206,15 @@ npx wrangler d1 execute jquants-db --local --file=schema/initial_seed.sql
 # ローカル D1 データベースの日次同期バッチ手動実行
 npx tsx batch/sync_daily.ts
 
-# ローカル D1 データベースのフルリセット (全データ削除 ＋ 最新スキーマ適用 ＋ 最新シード投入)
-npx wrangler d1 execute jquants-db --local --command="DELETE FROM calculated_metrics; DELETE FROM valuations; DELETE FROM daily_quotes; DELETE FROM stocks; DELETE FROM financial_disclosures; DELETE FROM sync_cursors;"
+# ローカル D1 データベースのフルリセット (全テーブル破棄 ＋ 最新スキーマ適用 ＋ 最新シード投入)
+npx wrangler d1 execute jquants-db --local --command="DROP VIEW IF EXISTS v_screener_stocks; DROP VIEW IF EXISTS v_watchlist_summary; DROP TABLE IF EXISTS calculated_metrics; DROP TABLE IF EXISTS valuations; DROP TABLE IF EXISTS daily_quotes; DROP TABLE IF EXISTS stocks; DROP TABLE IF EXISTS financial_disclosures; DROP TABLE IF EXISTS sync_cursors; DROP TABLE IF EXISTS d1_migrations;"
 npx wrangler d1 execute jquants-db --local --file=schema/schema.sql
 npx wrangler d1 execute jquants-db --local --file=schema/initial_seed.sql
 
 # 本番 D1 データベースのフルリセット
 # 推奨: GitHub Actions の "Reset and Seed Cloudflare D1 (Full Reset)" ワークフローを手動実行 (Run workflow)
 # CLI手動実行 (Cloudflare認証済み環境):
-# npx wrangler d1 execute jquants-db --remote --command="DELETE FROM calculated_metrics; DELETE FROM valuations; DELETE FROM daily_quotes; DELETE FROM stocks; DELETE FROM financial_disclosures; DELETE FROM sync_cursors;"
+# npx wrangler d1 execute jquants-db --remote --command="DROP VIEW IF EXISTS v_screener_stocks; DROP VIEW IF EXISTS v_watchlist_summary; DROP TABLE IF EXISTS calculated_metrics; DROP TABLE IF EXISTS valuations; DROP TABLE IF EXISTS daily_quotes; DROP TABLE IF EXISTS stocks; DROP TABLE IF EXISTS financial_disclosures; DROP TABLE IF EXISTS sync_cursors; DROP TABLE IF EXISTS d1_migrations;"
 # npx wrangler d1 execute jquants-db --remote --file=schema/schema.sql
 # npx wrangler d1 execute jquants-db --remote --file=schema/initial_seed.sql
 

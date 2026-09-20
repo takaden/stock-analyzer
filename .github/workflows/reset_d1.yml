@@ -41,13 +41,13 @@ jobs:
           EOF
           echo "Generated wrangler.toml for reset execution."
 
-      - name: Truncate All Tables in Remote D1
+      - name: Drop Existing Tables and Views in Remote D1
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          echo "🧹 Truncating all data tables in remote D1..."
-          npx wrangler d1 execute jquants-db --remote --command="DELETE FROM calculated_metrics; DELETE FROM valuations; DELETE FROM daily_quotes; DELETE FROM stocks; DELETE FROM financial_disclosures; DELETE FROM sync_cursors;"
+          echo "🧹 Dropping existing views, tables, and migration history in remote D1..."
+          npx wrangler d1 execute jquants-db --remote --command="DROP VIEW IF EXISTS v_screener_stocks; DROP VIEW IF EXISTS v_watchlist_summary; DROP TABLE IF EXISTS calculated_metrics; DROP TABLE IF EXISTS valuations; DROP TABLE IF EXISTS daily_quotes; DROP TABLE IF EXISTS stocks; DROP TABLE IF EXISTS financial_disclosures; DROP TABLE IF EXISTS sync_cursors; DROP TABLE IF EXISTS d1_migrations;"
 
       - name: Ensure Latest Schema and Views
         env:

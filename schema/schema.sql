@@ -164,3 +164,13 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
   updated_at TEXT NOT NULL
 );
 
+-- 8. マイグレーション履歴管理テーブル (初期スキーマに0001, 0002が含まれているため適用済みにマーク)
+CREATE TABLE IF NOT EXISTS d1_migrations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0001_add_trading_value.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0002_add_metrics_fields.sql');
+
+
