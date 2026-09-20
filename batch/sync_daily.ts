@@ -10,18 +10,12 @@ import {
   RawFinSummary,
 } from './lib/jquantsClient';
 import { buildCalculatedMetricsRow } from './lib/metricsCalculator';
+import { escapeSql } from './lib/sqlUtils';
 import type { FinSummary } from '../src/types/jquants';
 
 const CACHE_DIR = path.resolve('batch/.cache');
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
-}
-
-function escapeSql(val: any): string {
-  if (val === null || val === undefined) return 'NULL';
-  if (typeof val === 'number') return isNaN(val) ? 'NULL' : String(val);
-  if (typeof val === 'boolean') return val ? '1' : '0';
-  return `'${String(val).replace(/'/g, "''")}'`;
 }
 
 async function main() {
@@ -163,8 +157,9 @@ async function main() {
     sqlStatements.push(`INSERT INTO calculated_metrics (
       code, dps_annual, dps_type, dividend_yield, latest_cfo, latest_cfi, latest_fcf,
       cf_history_json, fcf_positive_count, fcf_total_count, is_fcf_consistently_positive,
-      non_reduction_years, is_no_dividend_cut_5years, equity_ratio, payout_ratio,
-      payout_ratio_status, doe, is_doe_high, op_margin, roe, is_roe_good, roa,
+      non_reduction_years, consecutive_dividend_growth_years, is_no_dividend_cut_5years,
+      equity_ratio, equity_growth_trend, equity_5year_change_percent, payout_ratio,
+      payout_ratio_status, doe, is_doe_high, buyback_detected, op_margin, roe, is_roe_good, roa,
       is_roa_good, eps_5year_cagr, eps_trend, beta_1year, beta_3year, beta_5year,
       beta_correlation, beta_category, beta_label, beta_badge_emoji, score_passed,
       score_total, updated_at
@@ -172,9 +167,10 @@ async function main() {
       ${escapeSql(row.code)}, ${escapeSql(row.dps_annual)}, ${escapeSql(row.dps_type)}, ${escapeSql(row.dividend_yield)},
       ${escapeSql(row.latest_cfo)}, ${escapeSql(row.latest_cfi)}, ${escapeSql(row.latest_fcf)}, ${escapeSql(row.cf_history_json)},
       ${row.fcf_positive_count}, ${row.fcf_total_count}, ${row.is_fcf_consistently_positive},
-      ${row.non_reduction_years}, ${row.is_no_dividend_cut_5years}, ${escapeSql(row.equity_ratio)},
+      ${row.non_reduction_years}, ${row.consecutive_dividend_growth_years}, ${row.is_no_dividend_cut_5years},
+      ${escapeSql(row.equity_ratio)}, ${escapeSql(row.equity_growth_trend)}, ${escapeSql(row.equity_5year_change_percent)},
       ${escapeSql(row.payout_ratio)}, ${escapeSql(row.payout_ratio_status)}, ${escapeSql(row.doe)},
-      ${row.is_doe_high}, ${escapeSql(row.op_margin)}, ${escapeSql(row.roe)}, ${row.is_roe_good},
+      ${row.is_doe_high}, ${row.buyback_detected}, ${escapeSql(row.op_margin)}, ${escapeSql(row.roe)}, ${row.is_roe_good},
       ${escapeSql(row.roa)}, ${row.is_roa_good}, ${escapeSql(row.eps_5year_cagr)}, ${escapeSql(row.eps_trend)},
       ${escapeSql(row.beta_1year)}, ${escapeSql(row.beta_3year)}, ${escapeSql(row.beta_5year)},
       ${escapeSql(row.beta_correlation)}, ${escapeSql(row.beta_category)}, ${escapeSql(row.beta_label)},
@@ -192,12 +188,16 @@ async function main() {
       fcf_total_count = excluded.fcf_total_count,
       is_fcf_consistently_positive = excluded.is_fcf_consistently_positive,
       non_reduction_years = excluded.non_reduction_years,
+      consecutive_dividend_growth_years = excluded.consecutive_dividend_growth_years,
       is_no_dividend_cut_5years = excluded.is_no_dividend_cut_5years,
       equity_ratio = excluded.equity_ratio,
+      equity_growth_trend = excluded.equity_growth_trend,
+      equity_5year_change_percent = excluded.equity_5year_change_percent,
       payout_ratio = excluded.payout_ratio,
       payout_ratio_status = excluded.payout_ratio_status,
       doe = excluded.doe,
       is_doe_high = excluded.is_doe_high,
+      buyback_detected = excluded.buyback_detected,
       op_margin = excluded.op_margin,
       roe = excluded.roe,
       is_roe_good = excluded.is_roe_good,

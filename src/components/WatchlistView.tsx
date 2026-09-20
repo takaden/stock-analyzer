@@ -511,7 +511,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
             <div className="flex items-center gap-2">
               <Award className="w-4 h-4 text-amber-400 flex-shrink-0" />
               <span>
-                <strong className="text-slate-200">総合ビューの判定スコア (10点満点)</strong>: 上記10項目（FCF恒常黒字、5期非減配、自己資本40%以上、配当性向健全、DOE2.5%以上、営業利益率8%以上、ROE8%以上、ROA5%以上、EPS成長、自社株買い）の合格数を合算したスコア（8点以上で優良）。
+                <strong className="text-slate-200">総合ビューの判定スコア (10点満点)</strong>: 上記10項目（FCF恒常黒字、5期非減配、自己資本40%以上、自己資本成長傾向、配当性向健全、DOE2.5%以上、営業利益率8%以上、ROE8%以上、ROA5%以上、EPS成長基調）の合格数を合算したスコア（8点以上で優良）。
               </span>
             </div>
             <div className="flex items-center gap-3 text-slate-400 text-[11px]">

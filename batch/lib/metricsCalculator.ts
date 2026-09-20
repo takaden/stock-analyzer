@@ -14,12 +14,16 @@ export interface CalculatedMetricsRow {
   fcf_total_count: number;
   is_fcf_consistently_positive: number;
   non_reduction_years: number;
+  consecutive_dividend_growth_years: number;
   is_no_dividend_cut_5years: number;
   equity_ratio: number | null;
+  equity_growth_trend: string | null;
+  equity_5year_change_percent: number | null;
   payout_ratio: number | null;
   payout_ratio_status: string | null;
   doe: number | null;
   is_doe_high: number;
+  buyback_detected: number;
   op_margin: number | null;
   roe: number | null;
   is_roe_good: number;
@@ -78,12 +82,16 @@ export function buildCalculatedMetricsRow(
     fcf_total_count: financials?.fcfTotalCount ?? 0,
     is_fcf_consistently_positive: financials?.isFcfConsistentlyPositive ? 1 : 0,
     non_reduction_years: financials?.nonReductionYears ?? 0,
+    consecutive_dividend_growth_years: financials?.consecutiveDividendGrowthYears ?? 0,
     is_no_dividend_cut_5years: financials?.isNoDividendCut5Years ? 1 : 0,
     equity_ratio: financials?.equityRatio ?? null,
+    equity_growth_trend: financials?.equityGrowthTrend ?? null,
+    equity_5year_change_percent: financials?.equity5YearChangePercent ?? null,
     payout_ratio: financials?.payoutRatio ?? null,
     payout_ratio_status: financials?.payoutRatioStatus ?? null,
     doe: financials?.doe ?? null,
     is_doe_high: financials?.isDoeHigh ? 1 : 0,
+    buyback_detected: financials?.buybackDetected ? 1 : 0,
     op_margin: financials?.opMargin ?? null,
     roe: financials?.roe ?? null,
     is_roe_good: financials?.isRoeGood ? 1 : 0,

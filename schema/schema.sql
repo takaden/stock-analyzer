@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS daily_quotes (
   high REAL,
   low REAL,
   volume REAL,                        -- 出来高 (株)
+  trading_value REAL,                 -- 売買代金 (円)
   prev_close REAL,                    -- 前日終値 (円)
   price_change REAL,                  -- 前日比 (円)
   price_change_percent REAL,          -- 騰落率 (%)
@@ -88,12 +89,16 @@ CREATE TABLE IF NOT EXISTS calculated_metrics (
   fcf_total_count INTEGER,
   is_fcf_consistently_positive INTEGER,
   non_reduction_years INTEGER,        -- 非減配年数
+  consecutive_dividend_growth_years INTEGER, -- 連続増配年数
   is_no_dividend_cut_5years INTEGER,
   equity_ratio REAL,                  -- 自己資本比率 (%)
+  equity_growth_trend TEXT,           -- 自己資本成長トレンド ('growing', 'stable', 'decreasing')
+  equity_5year_change_percent REAL,   -- 自己資本5年変化率 (%)
   payout_ratio REAL,                  -- 配当性向 (%)
-  payout_ratio_status TEXT,           -- 'healthy', 'moderate', 'warning', 'danger'
+  payout_ratio_status TEXT,           -- 'healthy', 'acceptable', 'warning', 'danger'
   doe REAL,                           -- 自己資本配当率 (%)
   is_doe_high INTEGER,
+  buyback_detected INTEGER,           -- 自社株買い実施検知 (0または1)
   op_margin REAL,                     -- 営業利益率 (%)
   roe REAL,                           -- ROE (%)
   is_roe_good INTEGER,
@@ -132,7 +137,7 @@ SELECT
   q.price_change AS priceChange,
   q.price_change_percent AS priceChangePercent,
   COALESCE(q.volume, 0) AS volume,
-  CAST(COALESCE(q.close, 0) * COALESCE(q.volume, 0) AS REAL) AS tradingValue,
+  COALESCE(q.trading_value, CAST(q.close * q.volume AS REAL), 0) AS tradingValue,
   COALESCE(q.market_cap, 0) AS marketCap,
   m.dps_annual AS dpsAnnual,
   m.dividend_yield AS dividendYield,

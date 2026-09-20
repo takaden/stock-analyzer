@@ -133,7 +133,7 @@ export const StockDividendHistory: React.FC<StockDividendHistoryProps> = ({
                           isIncrease ? 'text-emerald-400' : isDecrease ? 'text-rose-400' : 'text-slate-500'
                         }`}
                       >
-                        {isIncrease ? `+${item.changePercent}%` : `${item.changePercent}%`}
+                        {isIncrease ? `+${formatPercent(item.changePercent, 1)}` : formatPercent(item.changePercent, 1)}
                       </span>
                     )}
                   </div>
@@ -234,7 +234,7 @@ export const StockDividendHistory: React.FC<StockDividendHistoryProps> = ({
                           </span>
                           {item.changePercent != null && (
                             <span className="text-[11px] opacity-80 ml-0.5">
-                              ({isIncrease ? `+${item.changePercent}%` : `${item.changePercent}%`})
+                              ({isIncrease ? `+${formatPercent(item.changePercent, 1)}` : formatPercent(item.changePercent, 1)})
                             </span>
                           )}
                         </div>
@@ -255,7 +255,7 @@ export const StockDividendHistory: React.FC<StockDividendHistoryProps> = ({
                               : 'text-slate-300'
                           }`}
                         >
-                          {item.payoutRatio.toFixed(1)}%
+                          {formatPercent(item.payoutRatio, 1)}
                         </span>
                       ) : (
                         <span className="text-slate-600">-</span>

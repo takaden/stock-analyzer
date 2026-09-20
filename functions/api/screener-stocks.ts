@@ -18,24 +18,10 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     );
   }
 
-  const url = new URL(request.url);
-  const universe = url.searchParams.get('universe'); // 'jpx400' | 'topix100' | 'prime' | 'all'
-
   try {
-    let query = 'SELECT * FROM v_screener_stocks';
-    const params: any[] = [];
-
-    if (universe === 'jpx400') {
-      query += ' WHERE isJpx400 = 1';
-    } else if (universe === 'topix100') {
-      query += ' WHERE isTopix100 = 1';
-    } else if (universe === 'prime') {
-      query += ' WHERE isPrime = 1';
-    }
-
-    query += ' ORDER BY marketCap DESC';
-
-    const { results } = await env.DB.prepare(query).bind(...params).all();
+    const { results } = await env.DB.prepare(
+      'SELECT * FROM v_screener_stocks ORDER BY marketCap DESC'
+    ).all();
 
     return new Response(JSON.stringify({ data: results, count: results.length }), {
       headers: {

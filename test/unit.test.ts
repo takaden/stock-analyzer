@@ -1078,6 +1078,109 @@ test('buildCalculatedMetricsRow (Batch metrics calculation)', async (t) => {
     assert.equal(row.fcf_positive_count, 1);
     assert.equal(row.is_fcf_consistently_positive, 1);
     assert.equal(row.equity_ratio, 50.0); // 1.8兆 / 3.6兆 = 50%
+    assert.equal(row.consecutive_dividend_growth_years, 1); // 135 -> 145円増配予想で1年増配
+    assert.equal(row.buyback_detected, 0);
+  });
+});
+
+import { mapCalculatedMetricsRowToItem } from '../src/utils/metricsMapper.ts';
+
+test('mapCalculatedMetricsRowToItem (Unified D1 row mapping)', async (t) => {
+  await t.test('accurately maps calculated_metrics row and preserves consecutiveDividendGrowthYears vs nonReductionYears', () => {
+    const mockRow = {
+      code: '7203',
+      dps_annual: 90,
+      dps_type: 'forecast',
+      dividend_yield: 3.15,
+      latest_cfo: 4000000,
+      latest_cfi: -2000000,
+      latest_fcf: 2000000,
+      cf_history_json: JSON.stringify([{ periodLabel: '2026/03期', curPerEn: '2026-03-31', cfo: 4000000, cfi: -2000000, fcf: 2000000 }]),
+      fcf_positive_count: 5,
+      fcf_total_count: 5,
+      is_fcf_consistently_positive: 1,
+      non_reduction_years: 5,
+      consecutive_dividend_growth_years: 3, // 連続増配は3期、非減配は5期
+      is_no_dividend_cut_5years: 1,
+      equity_ratio: 62.5,
+      equity_growth_trend: 'growing',
+      equity_5year_change_percent: 25.4,
+      payout_ratio: 32.5,
+      payout_ratio_status: 'healthy',
+      doe: 3.8,
+      is_doe_high: 1,
+      buyback_detected: 1,
+      op_margin: 11.2,
+      roe: 14.5,
+      is_roe_good: 1,
+      roa: 7.2,
+      is_roa_good: 1,
+      eps_5year_cagr: 8.5,
+      eps_trend: 'growing',
+      beta_1year: 0.75,
+      beta_3year: 0.82,
+      beta_5year: 0.88,
+      beta_correlation: 0.85,
+      beta_category: 'defensive',
+      beta_label: 'ディフェンシブ',
+      beta_badge_emoji: '🛡️',
+      score_passed: 9,
+      score_total: 10,
+    };
+
+    const item = mapCalculatedMetricsRowToItem(mockRow);
+
+    assert.equal(item.nonReductionYears, 5);
+    assert.equal(item.consecutiveDividendGrowthYears, 3); // 誤認代入されず独立して保持される
+    assert.equal(item.isEquityRatioSolid, true); // 62.5 >= 60
+    assert.equal(item.isDoeTopTier, true); // 3.8 >= 3.5
+    assert.equal(item.isOpMarginTopTier, true); // 11.2 >= 10
+    assert.equal(item.buybackDetected, true);
+    assert.equal(item.equityGrowthTrend, 'growing');
+    assert.equal(item.equity5YearChangePercent, 25.4);
+    assert.ok(item.betaAnalysis);
+    assert.equal(item.betaAnalysis?.category, 'defensive');
+    assert.equal(item.scorePassed, 9);
+  });
+
+  await t.test('normalizes payout_ratio_status: converts moderate to acceptable, and falls back to unknown', () => {
+    const rowWithModerate = {
+      code: '1234',
+      payout_ratio_status: 'moderate',
+    };
+    assert.equal(mapCalculatedMetricsRowToItem(rowWithModerate).payoutRatioStatus, 'acceptable');
+
+    const rowWithNull = {
+      code: '1234',
+      payout_ratio_status: null,
+    };
+    assert.equal(mapCalculatedMetricsRowToItem(rowWithNull).payoutRatioStatus, 'unknown');
+
+    const rowWithHealthy = {
+      code: '1234',
+      payout_ratio_status: 'healthy',
+    };
+    assert.equal(mapCalculatedMetricsRowToItem(rowWithHealthy).payoutRatioStatus, 'healthy');
+  });
+});
+
+import { escapeSql } from '../batch/lib/sqlUtils.ts';
+
+test('escapeSql (Batch SQL escape utility)', async (t) => {
+  await t.test('properly handles numbers, including non-finite values (Infinity, -Infinity, NaN)', () => {
+    assert.equal(escapeSql(123.45), '123.45');
+    assert.equal(escapeSql(0), '0');
+    assert.equal(escapeSql(NaN), 'NULL');
+    assert.equal(escapeSql(Infinity), 'NULL');
+    assert.equal(escapeSql(-Infinity), 'NULL');
+  });
+
+  await t.test('handles strings, null, undefined, and booleans', () => {
+    assert.equal(escapeSql(null), 'NULL');
+    assert.equal(escapeSql(undefined), 'NULL');
+    assert.equal(escapeSql(true), '1');
+    assert.equal(escapeSql(false), '0');
+    assert.equal(escapeSql("hello 'world'"), "'hello ''world'''");
   });
 });
 
