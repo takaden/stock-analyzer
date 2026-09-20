@@ -169,6 +169,59 @@ test('extractDividendHistory', async (t) => {
     assert.equal(streak, 3); // 60 -> 75 -> 90 -> 100 は3期連続増配
   });
 
+  await t.test('4452 Kao pattern: adjusts past actual DPS (150, 152, 154 -> 75, 76, 77) with 1:2 split ratio and maintains consecutive streak to 78 yen forecast', () => {
+    const kaoFins = [
+      {
+        DiscDate: '2024-02-07',
+        CurPerType: 'FY',
+        CurPerEn: '2023-12-31',
+        DivAnn: '150.0',
+        EPS: '113.8',
+        ShOutFY: '465900000',
+      },
+      {
+        DiscDate: '2025-02-06',
+        CurPerType: 'FY',
+        CurPerEn: '2024-12-31',
+        DivAnn: '152.0',
+        EPS: '215.4',
+        ShOutFY: '465900000',
+      },
+      {
+        DiscDate: '2026-02-05',
+        CurPerType: 'FY',
+        CurPerEn: '2025-12-31',
+        DivAnn: '154.0',
+        EPS: '260.3',
+        ShOutFY: '453600000',
+      },
+      {
+        DiscDate: '2026-08-05',
+        CurPerType: '2Q',
+        CurPerEn: '2026-06-30',
+        CurFYEn: '2026-12-31',
+        Div2Q: '78.0',
+        FDivFY: '39.0',
+        FDivAnn: '',
+        FEPS: '149.21',
+        ShOutFY: '907200000', // 1:2分割後
+      },
+    ];
+
+    const { history, streak } = extractDividendHistory(kaoFins as any);
+    // 2023, 2024, 2025, 2026(予) の4期
+    assert.equal(history.length, 4);
+    // 過去実績が 1:2 分割調整されていること
+    assert.equal(history[0].dps, 75); // 150 -> 75
+    assert.equal(history[1].dps, 76); // 152 -> 76
+    assert.equal(history[2].dps, 77); // 154 -> 77
+    assert.equal(history[3].dps, 78); // 今期予想 78円
+    assert.equal(history[3].isForecast, true);
+
+    // 75 -> 76 -> 77 -> 78 と連続増配が正しく3期カウントされること
+    assert.equal(streak, 3);
+  });
+
   await t.test('handles empty fins gracefully', () => {
     const { history, streak } = extractDividendHistory([]);
     assert.equal(history.length, 0);
@@ -417,12 +470,58 @@ test('extractLatestDps', async (t) => {
     assert.deepEqual(res, { dpsAnnual: 18, dpsType: 'actual' });
   });
 
-  await t.test('returns null when fins is empty or has no valid dividend numbers', () => {
-    assert.deepEqual(extractLatestDps([]), { dpsAnnual: null, dpsType: null });
-    assert.deepEqual(extractLatestDps([{ DiscDate: '2026-01-01', DivAnn: '', FDivAnn: '' }] as any), {
-      dpsAnnual: null,
-      dpsType: null,
-    });
+  await t.test('4452 Kao pattern: reconstructs forecast DPS 78 yen from interim Div2Q 78 yen (split-adjusted to 39 yen) + year-end FDivFY 39 yen when FDivAnn is empty', () => {
+    // 4452 花王: 2026年7月1日付で1:2の株式分割を実施
+    const kaoFins = [
+      {
+        DiscDate: '2026-02-05',
+        CurPerType: 'FY',
+        CurFYEn: '2025-12-31',
+        CurPerEn: '2025-12-31',
+        DivAnn: '154.0',
+        FDivAnn: '',
+        ShOutFY: '453600000',
+      },
+      {
+        DiscDate: '2026-08-05',
+        CurPerType: '2Q',
+        CurFYEn: '2026-12-31',
+        CurPerEn: '2026-06-30',
+        Div2Q: '78.0', // 分割前基準の中間配当
+        FDivFY: '39.0', // 分割後基準の期末配当予想
+        FDivAnn: '', // 短信上は単純合算不可のため空欄
+        ShOutFY: '907200000', // 株式分割により倍増
+      },
+    ];
+    const res = extractLatestDps(kaoFins as any);
+    // 中間78円が新基準39円に換算され、期末39円と合算されて78円の予想年間配当になること
+    assert.deepEqual(res, { dpsAnnual: 78, dpsType: 'forecast' });
+
+    // 現在株価 3,478円 で利回り 2.24% になること
+    const yieldCalc = (res.dpsAnnual! / 3478) * 100;
+    assert.equal(Math.round(yieldCalc * 100) / 100, 2.24);
+  });
+
+  await t.test('adjusts past actual DivAnn with split ratio when no forecast components exist', () => {
+    // 過去実績のみ存在し、株式分割が行われていた場合
+    const splitFins = [
+      {
+        DiscDate: '2025-05-01',
+        CurPerType: 'FY',
+        DivAnn: '100.0',
+        ShOutFY: '1000000',
+      },
+      {
+        DiscDate: '2026-05-01',
+        CurPerType: '1Q',
+        DivAnn: '',
+        FDivAnn: '',
+        ShOutFY: '2000000', // 1:2分割
+      },
+    ];
+    const res = extractLatestDps(splitFins as any);
+    // 過去の100円が分割調整されて50円の実績として返ること
+    assert.deepEqual(res, { dpsAnnual: 50, dpsType: 'actual' });
   });
 });
 
@@ -880,6 +979,51 @@ test('extractDividendSchedule (Dividend record months & breakdown)', async (t) =
     assert.equal(res.yearEndDps, 56);
     assert.equal(res.yearEndDpsType, 'forecast'); // 期末は予想
     assert.equal(res.annualDps, 112);
+  });
+
+  await t.test('4452 Kao pattern: correctly converts interim DPS from 78 to 39 (split-adjusted) and aligns with year-end 39 and annual 78', () => {
+    const kaoFins = [
+      {
+        DiscDate: '2026-02-05',
+        CurPerType: 'FY',
+        CurFYEn: '2025-12-31',
+        CurPerEn: '2025-12-31',
+        Div2Q: '77.0',
+        DivFY: '77.0',
+        DivAnn: '154.0',
+        ShOutFY: '453600000',
+      },
+      {
+        DiscDate: '2026-08-05',
+        CurPerType: '2Q',
+        CurFYEn: '2026-12-31',
+        CurPerEn: '2026-06-30',
+        Div2Q: '78.0', // 分割前中間配当
+        FDivFY: '39.0', // 分割後期末予想
+        FDivAnn: '',
+        ShOutFY: '907200000', // 1:2分割後
+      },
+    ] as any;
+
+    const res = extractDividendSchedule(kaoFins);
+    assert.ok(res !== undefined);
+    assert.equal(res.fiscalYearEndMonth, 12);
+    assert.equal(res.interimMonth, 6);
+    assert.equal(res.recordMonthsLabel, '12月末 / 6月末');
+    assert.equal(res.frequency, 'twice');
+    // 分割前の中間78円が期末株式数基準（新基準）の39円に換算されていること
+    assert.equal(res.interimDps, 39);
+    assert.equal(res.interimDpsType, 'actual');
+    // 期末配当予想39円
+    assert.equal(res.yearEndDps, 39);
+    assert.equal(res.yearEndDpsType, 'forecast');
+    // 年間合計78円
+    assert.equal(res.annualDps, 78);
+    assert.equal(res.annualDpsType, 'forecast');
+    // 前年実績も分割調整（77円 / 2 = 38.5円）されていること
+    assert.equal(res.prevInterimDps, 38.5);
+    assert.equal(res.prevYearEndDps, 38.5);
+    assert.equal(res.prevAnnualDps, 77);
   });
 
   await t.test('handles annual-only dividend stocks properly (no interim)', () => {

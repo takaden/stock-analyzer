@@ -41222,7 +41222,7 @@ INSERT OR REPLACE INTO calculated_metrics (
       beta_correlation, beta_category, beta_label, beta_badge_emoji, score_passed,
       score_total, updated_at
     ) VALUES (
-      '4452', 154, 'actual', 4.41,
+      '4452', 78, 'forecast', 2.23,
       199680, -69767, 129913, '[{"periodLabel":"2025/12期","curPerEn":"2025-12-31","cfo":199680,"cfi":-69767,"fcf":129913}]',
       1, 1, 1,
       1, 1, 59,
