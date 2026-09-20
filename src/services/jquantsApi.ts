@@ -331,8 +331,6 @@ export async function fetchCompleteStockData(code: string, forceRefresh: boolean
   return stockData;
 }
 
-export { extractDividendHistory } from '../utils/indicators';
-
 /**
  * 日付指定による全上場銘柄の日足四本値取得 (/v2/equities/bars/daily?date=YYYY-MM-DD)
  */

@@ -203,22 +203,6 @@ export async function fetchFinsByDate(date: string): Promise<RawFinSummary[]> {
   return allFins;
 }
 
-/** 指定銘柄の全期間決算サマリー取得 */
-export async function fetchFinsByCode(code: string): Promise<RawFinSummary[]> {
-  let allFins: RawFinSummary[] = [];
-  let paginationKey: string | null = null;
-
-  do {
-    const params: Record<string, string> = { code: code.trim() };
-    if (paginationKey) params.pagination_key = paginationKey;
-    const res = await requestWithRateLimit<{ data: RawFinSummary[]; pagination_key?: string }>('/fins/summary', params);
-    allFins = allFins.concat(res.data || []);
-    paginationKey = res.pagination_key || null;
-  } while (paginationKey);
-
-  return allFins;
-}
-
 /** TOPIX ベンチマーク日足の取得 */
 export async function fetchTopixBars(): Promise<TopixBar[]> {
   console.log('📡 Fetching TOPIX daily bars...');
