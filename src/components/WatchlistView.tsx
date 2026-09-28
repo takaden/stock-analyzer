@@ -1415,7 +1415,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
                                         収益 {fin.categoryScores.profitability.passed}/{fin.categoryScores.profitability.total}
                                       </span>
                                       <span
-                                        title="事業成長性: EPS5年成長(+10%以上)、自己資本拡大(+5%以上)"
+                                        title="事業成長性: 過去5期でEPS成長(+10%超)、自己資本拡大(+5%超)"
                                         className={`px-1.5 py-0.5 rounded border transition-colors cursor-help ${
                                           fin.categoryScores.growth.passed === fin.categoryScores.growth.total
                                             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 font-semibold'

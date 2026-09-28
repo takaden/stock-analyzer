@@ -1336,7 +1336,7 @@ test('mapCalculatedMetricsRowToItem (Unified D1 row mapping)', async (t) => {
       beta_category: 'defensive',
       beta_label: 'ディフェンシブ',
       beta_badge_emoji: '🛡️',
-      score_passed: 9,
+      score_passed: 10,
       score_total: 10,
     };
 
@@ -1352,12 +1352,18 @@ test('mapCalculatedMetricsRowToItem (Unified D1 row mapping)', async (t) => {
     assert.equal(item.equity5YearChangePercent, 25.4);
     assert.ok(item.betaAnalysis);
     assert.equal(item.betaAnalysis?.category, 'defensive');
-    assert.equal(item.scorePassed, 9);
+    assert.equal(item.scorePassed, 10);
     assert.ok(item.categoryScores !== undefined);
     assert.equal(item.categoryScores?.dividend.passed, 3);
     assert.equal(item.categoryScores?.financial.passed, 2);
     assert.equal(item.categoryScores?.profitability.passed, 3);
     assert.equal(item.categoryScores?.growth.passed, 2);
+    const categorySum =
+      item.categoryScores!.dividend.passed +
+      item.categoryScores!.financial.passed +
+      item.categoryScores!.profitability.passed +
+      item.categoryScores!.growth.passed;
+    assert.equal(item.scorePassed, categorySum);
   });
 
   await t.test('normalizes payout_ratio_status: converts moderate to acceptable, and falls back to unknown', () => {
