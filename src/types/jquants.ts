@@ -302,6 +302,14 @@ export interface WatchlistFinancials {
   // 総合判定
   scorePassed: number; // 基準達成項目数
   scoreTotal: number; // 判定対象項目数
+  categoryScores?: CategoryScores; // 4観点ごとの内訳スコア
+}
+
+export interface CategoryScores {
+  dividend: { passed: number; total: number }; // 配当の持続性・安全性 (3点満点)
+  financial: { passed: number; total: number }; // 財務健全性 (2点満点)
+  profitability: { passed: number; total: number }; // 収益性・資本効率 (3点満点)
+  growth: { passed: number; total: number }; // 事業成長性 (2点満点)
 }
 
 export interface WatchlistItem extends ScreenerStock {
