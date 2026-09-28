@@ -42,6 +42,7 @@ import type {
   DividendHistoryItem,
   DividendSchedule,
   WatchlistFinancials,
+  CategoryScores,
   CashFlowPeriodItem,
   TopixBar,
   BetaAnalysis,
@@ -728,21 +729,39 @@ export function calculateWatchlistFinancials(
   }
 
   // ----------------------------------------------------
-  // 総合適合スコアの集計 (全10項目)
+  // 4観点スコアの集計 (全10項目)
   // ----------------------------------------------------
-  let scorePassed = 0;
-  let scoreTotal = 10;
+  // 1. 配当の持続性・安全性 (3項目)
+  let dividendPassed = 0;
+  if (isNoDividendCut5Years || nonReductionYears >= 3) dividendPassed++;
+  if (payoutRatioStatus === 'healthy' || payoutRatioStatus === 'acceptable') dividendPassed++;
+  if (isDoeHigh) dividendPassed++;
 
-  if (isFcfConsistentlyPositive) scorePassed++;
-  if (isNoDividendCut5Years || nonReductionYears >= 3) scorePassed++;
-  if (isEquityRatioSafe) scorePassed++;
-  if (equityGrowthTrend === 'growing') scorePassed++;
-  if (payoutRatioStatus === 'healthy' || payoutRatioStatus === 'acceptable') scorePassed++;
-  if (isDoeHigh) scorePassed++;
-  if (isOpMarginHigh) scorePassed++;
-  if (isRoeGood) scorePassed++;
-  if (isRoaGood) scorePassed++;
-  if (epsTrend === 'growing') scorePassed++;
+  // 2. 財務健全性 (2項目)
+  let financialPassed = 0;
+  if (isEquityRatioSafe) financialPassed++;
+  if (isFcfConsistentlyPositive) financialPassed++;
+
+  // 3. 収益性・資本効率 (3項目)
+  let profitabilityPassed = 0;
+  if (isOpMarginHigh) profitabilityPassed++;
+  if (isRoeGood) profitabilityPassed++;
+  if (isRoaGood) profitabilityPassed++;
+
+  // 4. 事業成長性 (2項目)
+  let growthPassed = 0;
+  if (equityGrowthTrend === 'growing') growthPassed++;
+  if (epsTrend === 'growing') growthPassed++;
+
+  const scorePassed = dividendPassed + financialPassed + profitabilityPassed + growthPassed;
+  const scoreTotal = 10;
+
+  const categoryScores: CategoryScores = {
+    dividend: { passed: dividendPassed, total: 3 },
+    financial: { passed: financialPassed, total: 2 },
+    profitability: { passed: profitabilityPassed, total: 3 },
+    growth: { passed: growthPassed, total: 2 },
+  };
 
   return {
     dpsAnnual: effectiveDps,
@@ -780,6 +799,7 @@ export function calculateWatchlistFinancials(
     epsTrend,
     scorePassed,
     scoreTotal,
+    categoryScores,
   };
 }
 

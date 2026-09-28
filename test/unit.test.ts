@@ -448,8 +448,19 @@ test('calculateWatchlistFinancials', async (t) => {
     assert.equal(res.epsTrend, 'growing');
 
     // 総合スコア
-    assert.ok(res.scorePassed >= 5);
+    assert.equal(res.scorePassed, 7); // 3 (配当) + 1 (財務) + 1 (収益) + 2 (成長) = 7
     assert.equal(res.scoreTotal, 10);
+
+    // 4観点スコア (CategoryScores)
+    assert.ok(res.categoryScores !== undefined);
+    assert.equal(res.categoryScores?.dividend.passed, 3);
+    assert.equal(res.categoryScores?.dividend.total, 3);
+    assert.equal(res.categoryScores?.financial.passed, 1); // 自己資本比率 37.8% (< 40%) 未達
+    assert.equal(res.categoryScores?.financial.total, 2);
+    assert.equal(res.categoryScores?.profitability.passed, 1); // 営業利益率 7.4% と ROA 3.6% 未達
+    assert.equal(res.categoryScores?.profitability.total, 3);
+    assert.equal(res.categoryScores?.growth.passed, 2);
+    assert.equal(res.categoryScores?.growth.total, 2);
 
     // 配当金・利回り: 100円, 2800円 => 3.57%
     assert.equal(res.dpsAnnual, 100);
@@ -1325,7 +1336,7 @@ test('mapCalculatedMetricsRowToItem (Unified D1 row mapping)', async (t) => {
       beta_category: 'defensive',
       beta_label: 'ディフェンシブ',
       beta_badge_emoji: '🛡️',
-      score_passed: 9,
+      score_passed: 10,
       score_total: 10,
     };
 
@@ -1341,7 +1352,18 @@ test('mapCalculatedMetricsRowToItem (Unified D1 row mapping)', async (t) => {
     assert.equal(item.equity5YearChangePercent, 25.4);
     assert.ok(item.betaAnalysis);
     assert.equal(item.betaAnalysis?.category, 'defensive');
-    assert.equal(item.scorePassed, 9);
+    assert.equal(item.scorePassed, 10);
+    assert.ok(item.categoryScores !== undefined);
+    assert.equal(item.categoryScores?.dividend.passed, 3);
+    assert.equal(item.categoryScores?.financial.passed, 2);
+    assert.equal(item.categoryScores?.profitability.passed, 3);
+    assert.equal(item.categoryScores?.growth.passed, 2);
+    const categorySum =
+      item.categoryScores!.dividend.passed +
+      item.categoryScores!.financial.passed +
+      item.categoryScores!.profitability.passed +
+      item.categoryScores!.growth.passed;
+    assert.equal(item.scorePassed, categorySum);
   });
 
   await t.test('normalizes payout_ratio_status: converts moderate to acceptable, and falls back to unknown', () => {

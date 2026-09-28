@@ -511,7 +511,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
             <div className="flex items-center gap-2">
               <Award className="w-4 h-4 text-amber-400 flex-shrink-0" />
               <span>
-                <strong className="text-slate-200">総合ビューの判定スコア (10点満点)</strong>: 上記10項目（FCF恒常黒字、5期非減配、自己資本40%以上、自己資本成長傾向、配当性向健全、DOE2.5%以上、営業利益率8%以上、ROE8%以上、ROA5%以上、EPS成長基調）の合格数を合算したスコア（8点以上で優良）。
+                <strong className="text-slate-200">総合ビューの判定スコア (10点満点)</strong>: 4観点【配当の持続性・安全性(3点) / 財務健全性(2点) / 収益性・資本効率(3点) / 事業成長性(2点)】の全10項目合格数を集計（7点以上で優良）。
               </span>
             </div>
             <div className="flex items-center gap-3 text-slate-400 text-[11px]">
@@ -1357,21 +1357,78 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
                         {/* --- TAB 5: 総合ビュー (Overview) --- */}
                         {activeTab === 'overview' && (
                           <>
-                            {/* 適合スコア */}
-                            <td className="py-2.5 px-3 text-center whitespace-nowrap bg-purple-950/20">
+                            {/* 適合スコア (総合 + 4観点内訳) */}
+                            <td className="py-2 px-3 text-center whitespace-nowrap bg-purple-950/20">
                               {fin ? (
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                                    fin.scorePassed >= 7
-                                      ? 'bg-emerald-900/60 text-emerald-200 border border-emerald-600/60'
-                                      : fin.scorePassed >= 5
-                                      ? 'bg-indigo-900/60 text-indigo-200 border border-indigo-600/60'
-                                      : 'bg-slate-800 text-slate-400 border border-slate-700'
-                                  }`}
-                                >
-                                  <Award className="w-3 h-3 text-yellow-400" />
-                                  <span>{fin.scorePassed} / {fin.scoreTotal}</span>
-                                </span>
+                                <div className="flex flex-col items-center gap-1.5 py-0.5">
+                                  {/* 総合スコア */}
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm ${
+                                      fin.scorePassed >= 7
+                                        ? 'bg-emerald-900/60 text-emerald-200 border border-emerald-600/60'
+                                        : fin.scorePassed >= 5
+                                        ? 'bg-indigo-900/60 text-indigo-200 border border-indigo-600/60'
+                                        : 'bg-slate-800 text-slate-400 border border-slate-700'
+                                    }`}
+                                  >
+                                    <Award className="w-3 h-3 text-yellow-400" />
+                                    <span>{fin.scorePassed} / {fin.scoreTotal}</span>
+                                  </span>
+
+                                  {/* 4観点内訳ミニバッジ */}
+                                  {fin.categoryScores && (
+                                    <div className="flex items-center justify-center gap-1 text-[10px] font-medium leading-none">
+                                      <span
+                                        title="配当の持続性・安全性: 非減配、配当性向(0〜70%)、DOE2.5%以上"
+                                        className={`px-1.5 py-0.5 rounded border transition-colors cursor-help ${
+                                          fin.categoryScores.dividend.passed === fin.categoryScores.dividend.total
+                                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 font-semibold'
+                                            : fin.categoryScores.dividend.passed > 0
+                                            ? 'bg-slate-900 text-slate-300 border-slate-700'
+                                            : 'bg-rose-950/40 text-rose-400 border-rose-800/40'
+                                        }`}
+                                      >
+                                        配当 {fin.categoryScores.dividend.passed}/{fin.categoryScores.dividend.total}
+                                      </span>
+                                      <span
+                                        title="財務健全性: 自己資本比率40%以上、FCF恒常的黒字"
+                                        className={`px-1.5 py-0.5 rounded border transition-colors cursor-help ${
+                                          fin.categoryScores.financial.passed === fin.categoryScores.financial.total
+                                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 font-semibold'
+                                            : fin.categoryScores.financial.passed > 0
+                                            ? 'bg-slate-900 text-slate-300 border-slate-700'
+                                            : 'bg-rose-950/40 text-rose-400 border-rose-800/40'
+                                        }`}
+                                      >
+                                        財務 {fin.categoryScores.financial.passed}/{fin.categoryScores.financial.total}
+                                      </span>
+                                      <span
+                                        title="収益性・資本効率: 営業利益率8%以上、ROE8%以上、ROA5%以上"
+                                        className={`px-1.5 py-0.5 rounded border transition-colors cursor-help ${
+                                          fin.categoryScores.profitability.passed === fin.categoryScores.profitability.total
+                                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 font-semibold'
+                                            : fin.categoryScores.profitability.passed > 0
+                                            ? 'bg-slate-900 text-slate-300 border-slate-700'
+                                            : 'bg-rose-950/40 text-rose-400 border-rose-800/40'
+                                        }`}
+                                      >
+                                        収益 {fin.categoryScores.profitability.passed}/{fin.categoryScores.profitability.total}
+                                      </span>
+                                      <span
+                                        title="事業成長性: 過去5期でEPS成長(+10%超)、自己資本拡大(+5%超)"
+                                        className={`px-1.5 py-0.5 rounded border transition-colors cursor-help ${
+                                          fin.categoryScores.growth.passed === fin.categoryScores.growth.total
+                                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 font-semibold'
+                                            : fin.categoryScores.growth.passed > 0
+                                            ? 'bg-slate-900 text-slate-300 border-slate-700'
+                                            : 'bg-rose-950/40 text-rose-400 border-rose-800/40'
+                                        }`}
+                                      >
+                                        成長 {fin.categoryScores.growth.passed}/{fin.categoryScores.growth.total}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-slate-600">-</span>
                               )}

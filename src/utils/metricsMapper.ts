@@ -1,4 +1,4 @@
-import type { WatchlistFinancials, BetaAnalysis } from '../types/jquants.ts';
+import type { WatchlistFinancials, BetaAnalysis, CategoryScores } from '../types/jquants.ts';
 
 export interface WatchlistMetricsItem extends WatchlistFinancials {
   betaAnalysis: BetaAnalysis | null;
@@ -12,6 +12,36 @@ export function mapCalculatedMetricsRowToItem(r: any): WatchlistMetricsItem {
   const eqRatio = r.equity_ratio;
   const doeVal = r.doe;
   const opMarginVal = r.op_margin;
+  const payoutStatus =
+    r.payout_ratio_status === 'moderate'
+      ? 'acceptable'
+      : (r.payout_ratio_status ?? 'unknown');
+
+  // 4観点スコアの集計
+  let dividendPassed = 0;
+  if (Boolean(r.is_no_dividend_cut_5years) || (r.non_reduction_years != null && r.non_reduction_years >= 3)) dividendPassed++;
+  if (payoutStatus === 'healthy' || payoutStatus === 'acceptable') dividendPassed++;
+  if (Boolean(r.is_doe_high)) dividendPassed++;
+
+  let financialPassed = 0;
+  if (eqRatio != null && eqRatio >= 40) financialPassed++;
+  if (Boolean(r.is_fcf_consistently_positive)) financialPassed++;
+
+  let profitabilityPassed = 0;
+  if (opMarginVal != null && opMarginVal >= 8) profitabilityPassed++;
+  if (Boolean(r.is_roe_good)) profitabilityPassed++;
+  if (Boolean(r.is_roa_good)) profitabilityPassed++;
+
+  let growthPassed = 0;
+  if (r.equity_growth_trend === 'growing') growthPassed++;
+  if (r.eps_trend === 'growing') growthPassed++;
+
+  const categoryScores: CategoryScores = {
+    dividend: { passed: dividendPassed, total: 3 },
+    financial: { passed: financialPassed, total: 2 },
+    profitability: { passed: profitabilityPassed, total: 3 },
+    growth: { passed: growthPassed, total: 2 },
+  };
 
   return {
     dpsAnnual: r.dps_annual,
@@ -33,10 +63,7 @@ export function mapCalculatedMetricsRowToItem(r: any): WatchlistMetricsItem {
     equityGrowthTrend: r.equity_growth_trend || 'unknown',
     equity5YearChangePercent: r.equity_5year_change_percent ?? null,
     payoutRatio: r.payout_ratio,
-    payoutRatioStatus:
-      r.payout_ratio_status === 'moderate'
-        ? 'acceptable'
-        : (r.payout_ratio_status ?? 'unknown'),
+    payoutRatioStatus: payoutStatus,
     doe: doeVal,
     isDoeHigh: Boolean(r.is_doe_high),
     isDoeTopTier: doeVal != null ? doeVal >= 3.5 : false,
@@ -63,5 +90,6 @@ export function mapCalculatedMetricsRowToItem(r: any): WatchlistMetricsItem {
     } : null,
     scorePassed: r.score_passed,
     scoreTotal: r.score_total,
+    categoryScores,
   };
 }
