@@ -17,24 +17,37 @@ export function mapCalculatedMetricsRowToItem(r: any): WatchlistMetricsItem {
       ? 'acceptable'
       : (r.payout_ratio_status ?? 'unknown');
 
-  // 4観点スコアの集計
+  // 4観点スコアの集計 (全10項目: 普遍的・時系列規律ベース)
   let dividendPassed = 0;
+  // ① 過去5年非減配または3年累進
   if (Boolean(r.is_no_dividend_cut_5years) || (r.non_reduction_years != null && r.non_reduction_years >= 3)) dividendPassed++;
+  // ② 配当性向が健全 (0〜70%)
   if (payoutStatus === 'healthy' || payoutStatus === 'acceptable') dividendPassed++;
-  if (Boolean(r.is_doe_high)) dividendPassed++;
+  // ③ 資本還元意識 (DOE 2.5%以上 または 自社株買い実施)
+  if (Boolean(r.is_doe_high) || Boolean(r.buyback_detected)) dividendPassed++;
 
   let financialPassed = 0;
-  if (eqRatio != null && eqRatio >= 40) financialPassed++;
+  // ④ 自己資本（純資産）が中長期で保全（減少傾向でない）
+  if (r.equity_growth_trend === 'growing' || r.equity_growth_trend === 'stable') financialPassed++;
+  // ⑤ 過去3期FCFが継続プラス
   if (Boolean(r.is_fcf_consistently_positive)) financialPassed++;
 
   let profitabilityPassed = 0;
-  if (opMarginVal != null && opMarginVal >= 8) profitabilityPassed++;
+  // ⑥ 本業の営業CFが黒字
+  if (r.latest_cfo != null && r.latest_cfo > 0) profitabilityPassed++;
+  // ⑦ ROE 8%以上 (資本コスト達成)
   if (Boolean(r.is_roe_good)) profitabilityPassed++;
-  if (Boolean(r.is_roa_good)) profitabilityPassed++;
+  // ⑧ 資本還元・効率規律 (ROE 10%以上 または DOE 3.5%以上)
+  const isCapitalDisciplineGood = (r.roe != null && r.roe >= 10.0) || (doeVal != null && doeVal >= 3.5);
+  if (isCapitalDisciplineGood) profitabilityPassed++;
 
   let growthPassed = 0;
+  // ⑨ 自己資本推移が成長傾向
   if (r.equity_growth_trend === 'growing') growthPassed++;
+  // ⑩ EPS推移が成長傾向
   if (r.eps_trend === 'growing') growthPassed++;
+
+  const scorePassed = dividendPassed + financialPassed + profitabilityPassed + growthPassed;
 
   const categoryScores: CategoryScores = {
     dividend: { passed: dividendPassed, total: 3 },
@@ -88,8 +101,8 @@ export function mapCalculatedMetricsRowToItem(r: any): WatchlistMetricsItem {
       description: '',
       dataDays: 0,
     } : null,
-    scorePassed: r.score_passed,
-    scoreTotal: r.score_total,
+    scorePassed: scorePassed,
+    scoreTotal: 10,
     categoryScores,
   };
 }

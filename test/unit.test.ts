@@ -448,16 +448,16 @@ test('calculateWatchlistFinancials', async (t) => {
     assert.equal(res.epsTrend, 'growing');
 
     // 総合スコア
-    assert.equal(res.scorePassed, 7); // 3 (配当) + 1 (財務) + 1 (収益) + 2 (成長) = 7
+    assert.equal(res.scorePassed, 9); // 3 (配当) + 2 (財務) + 2 (収益) + 2 (成長) = 9
     assert.equal(res.scoreTotal, 10);
 
     // 4観点スコア (CategoryScores)
     assert.ok(res.categoryScores !== undefined);
     assert.equal(res.categoryScores?.dividend.passed, 3);
     assert.equal(res.categoryScores?.dividend.total, 3);
-    assert.equal(res.categoryScores?.financial.passed, 1); // 自己資本比率 37.8% (< 40%) 未達
+    assert.equal(res.categoryScores?.financial.passed, 2); // 自己資本保全(成長) & FCF継続プラスで2点達成
     assert.equal(res.categoryScores?.financial.total, 2);
-    assert.equal(res.categoryScores?.profitability.passed, 1); // 営業利益率 7.4% と ROA 3.6% 未達
+    assert.equal(res.categoryScores?.profitability.passed, 2); // 営業CF黒字 & ROE 9.6%達成 (ROE 10%未満/DOE 3.5%未満)
     assert.equal(res.categoryScores?.profitability.total, 3);
     assert.equal(res.categoryScores?.growth.passed, 2);
     assert.equal(res.categoryScores?.growth.total, 2);

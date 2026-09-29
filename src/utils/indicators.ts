@@ -729,28 +729,39 @@ export function calculateWatchlistFinancials(
   }
 
   // ----------------------------------------------------
-  // 4観点スコアの集計 (全10項目)
+  // 4観点スコアの集計 (全10項目: 普遍的・時系列規律ベース)
   // ----------------------------------------------------
   // 1. 配当の持続性・安全性 (3項目)
   let dividendPassed = 0;
+  // ① 過去5年非減配または3年累進
   if (isNoDividendCut5Years || nonReductionYears >= 3) dividendPassed++;
+  // ② 配当性向が健全 (0〜70%)
   if (payoutRatioStatus === 'healthy' || payoutRatioStatus === 'acceptable') dividendPassed++;
-  if (isDoeHigh) dividendPassed++;
+  // ③ 資本還元意識 (DOE 2.5%以上 または 自社株買い実施)
+  if (isDoeHigh || buybackDetected) dividendPassed++;
 
-  // 2. 財務健全性 (2項目)
+  // 2. 財務健全性・耐久力 (2項目)
   let financialPassed = 0;
-  if (isEquityRatioSafe) financialPassed++;
+  // ④ 自己資本（純資産）が中長期で保全（減少傾向でない）
+  if (equityGrowthTrend === 'growing' || equityGrowthTrend === 'stable') financialPassed++;
+  // ⑤ 過去3期FCFが継続プラス
   if (isFcfConsistentlyPositive) financialPassed++;
 
-  // 3. 収益性・資本効率 (3項目)
+  // 3. 収益性・キャッシュ力 (3項目)
   let profitabilityPassed = 0;
-  if (isOpMarginHigh) profitabilityPassed++;
+  // ⑥ 本業の営業CFが黒字
+  if (latestCfo !== null && latestCfo > 0) profitabilityPassed++;
+  // ⑦ ROE 8%以上 (資本コスト達成)
   if (isRoeGood) profitabilityPassed++;
-  if (isRoaGood) profitabilityPassed++;
+  // ⑧ 資本還元・効率規律 (ROE 10%以上 または DOE 3.5%以上)
+  const isCapitalDisciplineGood = (roe !== null && roe >= 10.0) || isDoeTopTier;
+  if (isCapitalDisciplineGood) profitabilityPassed++;
 
   // 4. 事業成長性 (2項目)
   let growthPassed = 0;
+  // ⑨ 自己資本推移が成長傾向
   if (equityGrowthTrend === 'growing') growthPassed++;
+  // ⑩ EPS推移が成長傾向
   if (epsTrend === 'growing') growthPassed++;
 
   const scorePassed = dividendPassed + financialPassed + profitabilityPassed + growthPassed;
