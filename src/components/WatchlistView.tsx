@@ -491,7 +491,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
                     <span className="text-[10px] text-slate-400 font-normal">＝ 当期純利益 ÷ 総資産</span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    借入を含む総資産全体の活用効率。<strong className="text-emerald-400">5%以上が目安</strong>。過度な借金（レバレッジ）でROEを不当に吊り上げていないかを見抜くために併用します。
+                    借入を含む総資産全体の活用効率。<strong className="text-emerald-400">5%以上が目安</strong>（※金融・インフラ・装置産業等は1〜3%が標準）。過度な借金（レバレッジ）でROEを不当に吊り上げていないかを見抜く個別分析用指標です。
                   </p>
                 </li>
                 <li>
@@ -511,7 +511,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
             <div className="flex items-center gap-2">
               <Award className="w-4 h-4 text-amber-400 flex-shrink-0" />
               <span>
-                <strong className="text-slate-200">総合ビューの判定スコア (10点満点)</strong>: 4観点【配当の持続性・安全性(3点) / 財務健全性(2点) / 収益性・資本効率(3点) / 事業成長性(2点)】の全10項目合格数を集計（7点以上で優良）。
+                <strong className="text-slate-200">総合ビューの判定スコア (10点満点)</strong>: 全業種共通の時系列規律ベース【配当の持続性(3点) / 財務保全・CF(2点) / 収益・資本効率(3点) / 事業成長性(2点)】の全10項目合格数を集計（7点以上で優良）。
               </span>
             </div>
             <div className="flex items-center gap-3 text-slate-400 text-[11px]">
@@ -1379,7 +1379,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
                                   {fin.categoryScores && (
                                     <div className="flex items-center justify-center gap-1 text-[10px] font-medium leading-none">
                                       <span
-                                        title="配当の持続性・安全性: 非減配、配当性向(0〜70%)、DOE2.5%以上"
+                                        title="配当の持続性・安全性: 非減配、配当性向(0〜70%)、DOE2.5%以上または自社株買い"
                                         className={`px-1.5 py-0.5 rounded border transition-colors cursor-help ${
                                           fin.categoryScores.dividend.passed === fin.categoryScores.dividend.total
                                             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 font-semibold'
@@ -1391,7 +1391,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
                                         配当 {fin.categoryScores.dividend.passed}/{fin.categoryScores.dividend.total}
                                       </span>
                                       <span
-                                        title="財務健全性: 自己資本比率40%以上、FCF恒常的黒字"
+                                        title="財務健全性・耐久力: 自己資本保全(5年で非減少)、FCF恒常的黒字"
                                         className={`px-1.5 py-0.5 rounded border transition-colors cursor-help ${
                                           fin.categoryScores.financial.passed === fin.categoryScores.financial.total
                                             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 font-semibold'
@@ -1403,7 +1403,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
                                         財務 {fin.categoryScores.financial.passed}/{fin.categoryScores.financial.total}
                                       </span>
                                       <span
-                                        title="収益性・資本効率: 営業利益率8%以上、ROE8%以上、ROA5%以上"
+                                        title="収益性・キャッシュ力: 本業営業CF黒字、ROE8%以上、資本還元規律(ROE10%+またはDOE3.5%+)"
                                         className={`px-1.5 py-0.5 rounded border transition-colors cursor-help ${
                                           fin.categoryScores.profitability.passed === fin.categoryScores.profitability.total
                                             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 font-semibold'
@@ -1415,7 +1415,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
                                         収益 {fin.categoryScores.profitability.passed}/{fin.categoryScores.profitability.total}
                                       </span>
                                       <span
-                                        title="事業成長性: 過去5期でEPS成長(+10%超)、自己資本拡大(+5%超)"
+                                        title="事業成長性: 取得本決算データ全体でEPS成長(+10%超)、自己資本拡大(+5%超)"
                                         className={`px-1.5 py-0.5 rounded border transition-colors cursor-help ${
                                           fin.categoryScores.growth.passed === fin.categoryScores.growth.total
                                             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 font-semibold'
