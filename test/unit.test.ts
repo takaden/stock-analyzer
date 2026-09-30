@@ -278,6 +278,46 @@ test('extractDividendHistory', async (t) => {
     assert.equal(streak, 2);
   });
 
+  await t.test('does not misidentify interim special dividend as stock split when FDivAnn is present', () => {
+    const specialDivFins = [
+      {
+        DiscDate: '2025-05-20',
+        CurPerType: 'FY',
+        CurPerEn: '2025-03-31',
+        DivAnn: '80.0',
+        EPS: '200.0',
+        ShOutFY: '10000000',
+      },
+      {
+        DiscDate: '2026-05-20',
+        CurPerType: 'FY',
+        CurPerEn: '2026-03-31',
+        DivAnn: '85.0',
+        EPS: '210.0',
+        ShOutFY: '10000000',
+      },
+      {
+        DiscDate: '2026-08-05',
+        CurPerType: '1Q',
+        CurFYEn: '2027-03-31',
+        CurPerEn: '2026-06-30',
+        Div2Q: '',
+        FDiv2Q: '60.0', // 記念配当30円含むため中間が大きい
+        FDivFY: '30.0',
+        FDivAnn: '90.0', // 年間配当予想が明示されている (分割ではない)
+        FEPS: '220.0',
+        ShOutFY: '10000000',
+      },
+    ];
+
+    const { history, streak } = extractDividendHistory(specialDivFins as any);
+    assert.equal(history.length, 3);
+    assert.equal(history[0].dps, 80); // 過去実績が1/2に除算されないこと
+    assert.equal(history[1].dps, 85);
+    assert.equal(history[2].dps, 90); // 年間予想が60円に縮小されず90円であること
+    assert.equal(streak, 2); // 80 -> 85 -> 90 で2期連続増配
+  });
+
   await t.test('handles empty fins gracefully', () => {
     const { history, streak } = extractDividendHistory([]);
     assert.equal(history.length, 0);
@@ -657,6 +697,24 @@ test('extractLatestDps', async (t) => {
     // 権利落ち後株価 523.2円 で適正利回り 3.12% になること (誤計算の25%にならないこと)
     const yieldCalc = (res.dpsAnnual! / 523.2) * 100;
     assert.equal(Math.round(yieldCalc * 100) / 100, 3.12);
+  });
+
+  await t.test('does not misidentify interim special dividend as stock split when FDivAnn is present', () => {
+    const specialDivFins = [
+      {
+        DiscDate: '2026-08-05',
+        CurPerType: '1Q',
+        CurFYEn: '2027-03-31',
+        CurPerEn: '2026-06-30',
+        FDiv2Q: '60.0', // 記念配当含む中間
+        FDivFY: '30.0',
+        FDivAnn: '90.0', // 年間配当予想が明示されている
+        ShOutFY: '10000000',
+      },
+    ];
+    const res = extractLatestDps(specialDivFins as any);
+    // 誤って 60/2 + 30 = 60円 にならず、公表値 90円 が返ること
+    assert.deepEqual(res, { dpsAnnual: 90, dpsType: 'forecast' });
   });
 
   await t.test('adjusts past actual DivAnn with split ratio when no forecast components exist', () => {
@@ -1213,6 +1271,37 @@ test('extractDividendSchedule (Dividend record months & breakdown)', async (t) =
     assert.equal(schedule.interimDps, 8.17); // 122.5 / 15 = 8.166... -> 8.17
     assert.equal(schedule.yearEndDps, 8.17);
     assert.equal(schedule.annualDps, 16.34);
+  });
+
+  await t.test('does not misidentify interim special dividend as stock split when FDivAnn is present', () => {
+    const specialDivFins = [
+      {
+        DiscDate: '2026-05-20',
+        CurPerType: 'FY',
+        CurFYEn: '2026-03-31',
+        CurPerEn: '2026-03-31',
+        Div2Q: '30.0',
+        DivFY: '30.0',
+        DivAnn: '60.0',
+        ShOutFY: '10000000',
+      },
+      {
+        DiscDate: '2026-08-05',
+        CurPerType: '1Q',
+        CurFYEn: '2027-03-31',
+        CurPerEn: '2026-06-30',
+        FDiv2Q: '60.0', // 記念配当含む中間
+        FDivFY: '30.0',
+        FDivAnn: '90.0',
+        ShOutFY: '10000000',
+      },
+    ];
+
+    const schedule = extractDividendSchedule(specialDivFins as any);
+    assert.ok(schedule !== undefined);
+    assert.equal(schedule.interimDps, 60); // 誤って30円に半減しないこと
+    assert.equal(schedule.yearEndDps, 30);
+    assert.equal(schedule.annualDps, 90);
   });
 
   await t.test('handles annual-only dividend stocks properly (no interim)', () => {

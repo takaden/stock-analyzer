@@ -159,10 +159,16 @@ export function extractDividendHistory(fins: FinSummary[]): {
   const isSplitAlreadyInShOut = detectSplitRatio(latestShOutBase, prevShOutBase) > 1.15;
 
   // 進行期で期中株式分割が発生しているか判定
+  // ※ 株式数情報 (ShOutFY) から分割を検知できない臨時開示等であり、かつ年間配当予想 (FDivAnn) も空欄の場合にのみ、
+  // 中間と期末の配当比率から期中分割を検出 (特別配当・記念配当等による中間偏重との誤判定を防止)
   const latestDpsInfo = extractLatestDps(fins);
   const midDps = parseNumber(latestFin.Div2Q) ?? parseNumber(latestFin.FDiv2Q);
   const fFY = parseNumber(latestFin.FDivFY);
-  const currentSplitRatio = detectSplitRatioFromDps(midDps, fFY);
+  const hasLatestFDivAnn = parseNumber(latestFin.FDivAnn) !== null;
+  const currentSplitRatio =
+    (latestShOutBase === null || parseNumber(latestFin.ShOutFY) === null) && !hasLatestFDivAnn
+      ? detectSplitRatioFromDps(midDps, fFY)
+      : 1;
 
   // 過去実績の基準となる最新株数 (未反映の場合のみ進行期分割を乗算)
   const currentEffectiveShOut = (latestShOutBase && currentSplitRatio > 1 && !isSplitAlreadyInShOut)
@@ -327,7 +333,9 @@ export function extractDividendSchedule(fins: FinSummary[]): DividendSchedule | 
   const prevShOut = prevFinWithShOut ? parseNumber(prevFinWithShOut.ShOutFY) : null;
   let splitRatio = detectSplitRatio(latestShOut, prevShOut);
 
-  if (splitRatio === 1 && interimDps && yearEndDps) {
+  // 株式数情報から分割を検知できない臨時開示等であり、かつ年間配当予想 (FDivAnn) も空欄の場合にのみ配当比率から検出
+  const hasScheduleFDivAnn = parseNumber(latestFin.FDivAnn) !== null;
+  if (splitRatio === 1 && latestShOut === null && !hasScheduleFDivAnn && interimDps && yearEndDps) {
     splitRatio = detectSplitRatioFromDps(interimDps, yearEndDps);
   }
   if (splitRatio > 1.15 && interimDps !== null) {
@@ -425,8 +433,10 @@ export function extractLatestDps(fins: FinSummary[]): {
       const prevShOut = prevFinWithShOut ? parseNumber(prevFinWithShOut.ShOutFY) : null;
       let splitRatio = detectSplitRatio(latestShOut, prevShOut);
 
-      // (b) 株式数情報がない場合でも、中間と期末の配当比率から汎用的に期中分割を検出 (例: 1:2, 1:3, 1:15 等)
-      if (splitRatio === 1) {
+      // (b) 株式数情報がなく (ShOutFYが空欄) かつ 年間配当予想が空欄の場合にのみ、
+      // 中間と期末の配当比率から期中分割を検出 (特別配当・記念配当等による中間偏重との誤判定を防止)
+      const hasLatestFDivAnn = parseNumber(latestFin.FDivAnn) !== null;
+      if (splitRatio === 1 && latestShOut === null && !hasLatestFDivAnn) {
         splitRatio = detectSplitRatioFromDps(midDps, fFY);
       }
 
@@ -450,7 +460,8 @@ export function extractLatestDps(fins: FinSummary[]): {
       if (fdiv !== null && fdiv > 0) {
         const finShOut = parseNumber(fin.ShOutFY);
         let splitRatio = detectSplitRatio(latestShOut, finShOut);
-        if (splitRatio === 1 && midDps && fFY) {
+        const hasLatestFDivAnn = parseNumber(latestFin.FDivAnn) !== null;
+        if (splitRatio === 1 && latestShOut === null && !hasLatestFDivAnn && midDps && fFY) {
           splitRatio = detectSplitRatioFromDps(midDps, fFY);
         }
         const adjustedFdiv = splitRatio !== 1 ? Math.round((fdiv / splitRatio) * 100) / 100 : fdiv;
