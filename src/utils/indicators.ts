@@ -91,6 +91,35 @@ export function detectSplitRatio(latestShOut: number | null | undefined, pastShO
 }
 
 /**
+ * 中間配当と期末配当の比率から期中株式分割比率 (新株数 / 旧株数) を推定
+ * 進行期途中で株式分割が行われた場合 (例: 1:2, 1:3, 1:4, 1:5, 1:10, 1:15, 1:25 等)、
+ * 中間配当 (分割前基準) が期末配当 (分割後基準) より著しく大きくなる定型現象を検知。
+ */
+export function detectSplitRatioFromDps(
+  interimDps: number | null | undefined,
+  yearEndDps: number | null | undefined
+): number {
+  if (!interimDps || !yearEndDps || interimDps <= 0 || yearEndDps <= 0) {
+    return 1;
+  }
+  // 中間配当が期末配当の1.5倍以上の場合 (期中株式分割の可能性)
+  if (interimDps >= yearEndDps * 1.5) {
+    const rawRatio = interimDps / yearEndDps;
+    const roundedInt = Math.round(rawRatio);
+    // 整数倍との差が10%以内なら整数倍を採用 (例: 1.8〜2.2 -> 2, 2.7〜3.3 -> 3, 13.5〜16.5 -> 15 等)
+    if (Math.abs(rawRatio - roundedInt) / roundedInt < 0.1) {
+      return roundedInt;
+    }
+    // 1.5分割などの場合
+    const roundedHalf = Math.round(rawRatio * 2) / 2;
+    if (Math.abs(rawRatio - roundedHalf) / roundedHalf < 0.1) {
+      return roundedHalf;
+    }
+  }
+  return 1;
+}
+
+/**
  * 決算サマリーから過去の年間配当推移と連続増配年数を抽出
  * (株式分割があった場合は過去のDPSおよびEPSを現在の株式数基準にスプリット調整)
  */
@@ -105,12 +134,13 @@ export function extractDividendHistory(fins: FinSummary[]): {
   // 開示日昇順にソート
   const sortedFins = [...fins].sort((a, b) => a.DiscDate.localeCompare(b.DiscDate));
   const latestFin = sortedFins[sortedFins.length - 1];
-  const latestShOut = parseNumber(latestFin.ShOutFY);
 
   // FY (本決算) レコードを期末日(CurPerEn)ごとに抽出 (重複は新しい開示を採用)
+  // ※ 配当予想修正などの臨時開示で CurPerType='FY' かつ 未来のCurPerEn が入る場合、実績値のないものは確定FYから除外
   const fyMap = new Map<string, FinSummary>();
   sortedFins.forEach((f) => {
-    if (f.CurPerType === 'FY' && f.CurPerEn) {
+    const hasActualData = parseNumber(f.DivAnn) != null || parseNumber(f.DivFY) != null || parseNumber(f.EPS) != null;
+    if (f.CurPerType === 'FY' && f.CurPerEn && hasActualData) {
       fyMap.set(f.CurPerEn, f);
     }
   });
@@ -118,8 +148,48 @@ export function extractDividendHistory(fins: FinSummary[]): {
   const sortedFys = Array.from(fyMap.values()).sort((a, b) => (a.CurPerEn || '').localeCompare(b.CurPerEn || ''));
   const history: DividendHistoryItem[] = [];
 
+  // 最新の有効な ShOutFY を持つレコードとその前のレコードを探索
+  const reversedWithShOut = [...sortedFins].reverse().filter((f) => parseNumber(f.ShOutFY));
+  const latestFinWithShOut = reversedWithShOut[0];
+  const prevFinWithShOut = reversedWithShOut[1];
+  const latestShOutBase = latestFinWithShOut ? parseNumber(latestFinWithShOut.ShOutFY) : null;
+  const prevShOutBase = prevFinWithShOut ? parseNumber(prevFinWithShOut.ShOutFY) : null;
+
+  // すでに ShOutFY 自体に分割が反映されているか
+  const isSplitAlreadyInShOut = detectSplitRatio(latestShOutBase, prevShOutBase) > 1.15;
+
+  // 進行期で期中株式分割が発生しているか判定
+  // ※ 株式数情報 (ShOutFY) から分割を検知できない臨時開示等であり、かつ年間配当予想 (FDivAnn) も空欄の場合にのみ、
+  // 中間と期末の配当比率から期中分割を検出 (特別配当・記念配当等による中間偏重との誤判定を防止)
+  const latestDpsInfo = extractLatestDps(fins);
+  const midDps = parseNumber(latestFin.Div2Q) ?? parseNumber(latestFin.FDiv2Q);
+  const fFY = parseNumber(latestFin.FDivFY);
+  const hasLatestFDivAnn = parseNumber(latestFin.FDivAnn) !== null;
+  const currentSplitRatio =
+    (latestShOutBase === null || parseNumber(latestFin.ShOutFY) === null) && !hasLatestFDivAnn
+      ? detectSplitRatioFromDps(midDps, fFY)
+      : 1;
+
+  // 過去実績の基準となる最新株数 (未反映の場合のみ進行期分割を乗算)
+  const currentEffectiveShOut = (latestShOutBase && currentSplitRatio > 1 && !isSplitAlreadyInShOut)
+    ? latestShOutBase * currentSplitRatio
+    : latestShOutBase;
+
   sortedFys.forEach((fy) => {
-    const rawDps = parseNumber(fy.DivAnn) ?? parseNumber(fy.DivFY);
+    // 過去の本決算で DivAnn が空欄だが期中分割等で Div2Q と DivFY がある場合の復元
+    let rawDps = parseNumber(fy.DivAnn);
+    if (rawDps === null) {
+      const q2 = parseNumber(fy.Div2Q);
+      const yearEnd = parseNumber(fy.DivFY);
+      if (q2 != null && yearEnd != null) {
+        const fySplitRatio = detectSplitRatioFromDps(q2, yearEnd);
+        const adjQ2 = fySplitRatio > 1 ? q2 / fySplitRatio : q2;
+        rawDps = Math.round((adjQ2 + yearEnd) * 100) / 100;
+      } else {
+        rawDps = parseNumber(fy.DivFY);
+      }
+    }
+
     if (rawDps !== null && rawDps > 0 && fy.CurPerEn) {
       const year = fy.CurPerEn.slice(0, 4);
       const month = fy.CurPerEn.slice(5, 7);
@@ -128,8 +198,8 @@ export function extractDividendHistory(fins: FinSummary[]): {
 
       // 株式分割・併合調整 (過去実績を現在の株式数基準に換算)
       const fyShOut = parseNumber(fy.ShOutFY);
-      const splitRatio = detectSplitRatio(latestShOut, fyShOut);
-      const dps = splitRatio !== 1 ? Math.round((rawDps / splitRatio) * 10) / 10 : rawDps;
+      const splitRatio = detectSplitRatio(currentEffectiveShOut, fyShOut);
+      const dps = splitRatio !== 1 ? Math.round((rawDps / splitRatio) * 100) / 100 : rawDps;
       const eps = rawEps !== null && splitRatio !== 1 ? Math.round((rawEps / splitRatio) * 100) / 100 : rawEps;
 
       history.push({
@@ -147,14 +217,15 @@ export function extractDividendHistory(fins: FinSummary[]): {
 
   // 最新の開示から進行期（来期予想）配当を取得
   const lastFY = sortedFys[sortedFys.length - 1];
-  const latestDpsInfo = extractLatestDps(fins);
   const forecastDps =
     (latestDpsInfo.dpsType === 'forecast' ? latestDpsInfo.dpsAnnual : null) ??
     (lastFY ? parseNumber(lastFY.NxFDivAnn) : null);
 
   if (forecastDps !== null && forecastDps > 0) {
     let nextLabel = '進行期(予)';
-    if (lastFY && lastFY.NxtFYEn) {
+    if (latestFin.CurFYEn) {
+      nextLabel = `${latestFin.CurFYEn.slice(0, 4)}/${latestFin.CurFYEn.slice(5, 7)}期(予)`;
+    } else if (lastFY && lastFY.NxtFYEn) {
       nextLabel = `${lastFY.NxtFYEn.slice(0, 4)}/${lastFY.NxtFYEn.slice(5, 7)}期(予)`;
     } else if (lastFY && lastFY.CurPerEn) {
       const nextYear = parseInt(lastFY.CurPerEn.slice(0, 4), 10) + 1;
@@ -178,7 +249,7 @@ export function extractDividendHistory(fins: FinSummary[]): {
   for (let i = 0; i < history.length; i++) {
     if (i > 0) {
       const prev = history[i - 1];
-      const diff = Math.round((history[i].dps - prev.dps) * 10) / 10;
+      const diff = Math.round((history[i].dps - prev.dps) * 100) / 100;
       history[i].changeAmount = diff;
       history[i].changePercent = prev.dps > 0 ? Math.round((diff / prev.dps) * 1000) / 10 : null;
     }
@@ -262,8 +333,10 @@ export function extractDividendSchedule(fins: FinSummary[]): DividendSchedule | 
   const prevShOut = prevFinWithShOut ? parseNumber(prevFinWithShOut.ShOutFY) : null;
   let splitRatio = detectSplitRatio(latestShOut, prevShOut);
 
-  if (splitRatio === 1 && interimDps && yearEndDps && interimDps >= yearEndDps * 1.8 && interimDps <= yearEndDps * 2.2) {
-    splitRatio = 2;
+  // 株式数情報から分割を検知できない臨時開示等であり、かつ年間配当予想 (FDivAnn) も空欄の場合にのみ配当比率から検出
+  const hasScheduleFDivAnn = parseNumber(latestFin.FDivAnn) !== null;
+  if (splitRatio === 1 && latestShOut === null && !hasScheduleFDivAnn && interimDps && yearEndDps) {
+    splitRatio = detectSplitRatioFromDps(interimDps, yearEndDps);
   }
   if (splitRatio > 1.15 && interimDps !== null) {
     // 中間配当を分割後（期末新基準）に換算
@@ -294,7 +367,10 @@ export function extractDividendSchedule(fins: FinSummary[]): DividendSchedule | 
 
   // 前期実績の内訳（株式分割調整済み）
   const lastFYShOut = lastFY ? parseNumber(lastFY.ShOutFY) : null;
-  const prevSplitRatio = detectSplitRatio(latestShOut, lastFYShOut);
+  let prevSplitRatio = detectSplitRatio(latestShOut, lastFYShOut);
+  if (prevSplitRatio === 1 && splitRatio > 1.15) {
+    prevSplitRatio = splitRatio;
+  }
   const prevInterimDps = prevActQ2 !== null ? (prevSplitRatio !== 1 ? Math.round((prevActQ2 / prevSplitRatio) * 100) / 100 : prevActQ2) : null;
   const rawPrevYearEnd = lastFY ? parseNumber(lastFY.DivFY) : null;
   const prevYearEndDps = rawPrevYearEnd !== null ? (prevSplitRatio !== 1 ? Math.round((rawPrevYearEnd / prevSplitRatio) * 100) / 100 : rawPrevYearEnd) : null;
@@ -342,7 +418,7 @@ export function extractLatestDps(fins: FinSummary[]): {
   }
 
   // 2. 最新開示で FDivAnn が空欄だが、期末予想 (FDivFY) が存在する場合の年間予想再構成
-  // (例: 花王のように期中株式分割により中間と期末で株式数が異なり、企業が FDivAnn を空欄開示しているケース)
+  // (例: 花王や東京海上のように期中株式分割により中間と期末で株式数が異なり、企業が FDivAnn を空欄開示しているケース)
   const fFY = parseNumber(latestFin.FDivFY);
   const actQ2 = parseNumber(latestFin.Div2Q);
   const fQ2 = parseNumber(latestFin.FDiv2Q);
@@ -357,9 +433,11 @@ export function extractLatestDps(fins: FinSummary[]): {
       const prevShOut = prevFinWithShOut ? parseNumber(prevFinWithShOut.ShOutFY) : null;
       let splitRatio = detectSplitRatio(latestShOut, prevShOut);
 
-      // (b) 株式数情報がない場合でも、中間が期末のほぼ2倍等で期末が明らかに分割後になっている場合
-      if (splitRatio === 1 && midDps >= fFY * 1.8 && midDps <= fFY * 2.2) {
-        splitRatio = 2;
+      // (b) 株式数情報がなく (ShOutFYが空欄) かつ 年間配当予想が空欄の場合にのみ、
+      // 中間と期末の配当比率から期中分割を検出 (特別配当・記念配当等による中間偏重との誤判定を防止)
+      const hasLatestFDivAnn = parseNumber(latestFin.FDivAnn) !== null;
+      if (splitRatio === 1 && latestShOut === null && !hasLatestFDivAnn) {
+        splitRatio = detectSplitRatioFromDps(midDps, fFY);
       }
 
       let adjustedMidDps = midDps;
@@ -381,7 +459,11 @@ export function extractLatestDps(fins: FinSummary[]): {
       const fdiv = parseNumber(fin.FDivAnn);
       if (fdiv !== null && fdiv > 0) {
         const finShOut = parseNumber(fin.ShOutFY);
-        const splitRatio = detectSplitRatio(latestShOut, finShOut);
+        let splitRatio = detectSplitRatio(latestShOut, finShOut);
+        const hasLatestFDivAnn = parseNumber(latestFin.FDivAnn) !== null;
+        if (splitRatio === 1 && latestShOut === null && !hasLatestFDivAnn && midDps && fFY) {
+          splitRatio = detectSplitRatioFromDps(midDps, fFY);
+        }
         const adjustedFdiv = splitRatio !== 1 ? Math.round((fdiv / splitRatio) * 100) / 100 : fdiv;
         return { dpsAnnual: adjustedFdiv, dpsType: 'forecast' };
       }
