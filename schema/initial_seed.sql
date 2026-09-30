@@ -87894,7 +87894,7 @@ INSERT OR REPLACE INTO calculated_metrics (
       beta_correlation, beta_category, beta_label, beta_badge_emoji, score_passed,
       score_total, updated_at
     ) VALUES (
-      '8766', 130.67, 'forecast', 1.59,
+      '8766', 16.34, 'forecast', 3.12,
       NULL, NULL, NULL, '[{"periodLabel":"2026/03期","curPerEn":"2026-03-31","cfo":1390562,"cfi":-402738,"fcf":987824},{"periodLabel":"2027/03期","curPerEn":"2027-03-31","cfo":null,"cfi":null,"fcf":null}]',
       1, 1, 0,
       1, 0, 1,

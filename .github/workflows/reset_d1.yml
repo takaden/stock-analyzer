@@ -57,11 +57,13 @@ jobs:
           echo "📋 Applying latest schema and views..."
           npx wrangler d1 execute jquants-db --remote --file=schema/schema.sql
 
-      - name: Seed Remote D1 with Latest Stock & Metrics Data
+      - name: Ingest Fresh Historical Data from J-Quants API into Remote D1 (Clean Full Reset)
         env:
+          VITE_JQUANTS_API_KEY: ${{ secrets.VITE_JQUANTS_API_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_ENV: remote
         run: |
-          echo "🌱 Ingesting fresh seed data into remote D1 (approx. 4,000 stocks)..."
-          npx wrangler d1 execute jquants-db --remote --file=schema/initial_seed.sql
-          echo "🎉 Remote D1 Full Reset and Seed completed successfully!"
+          echo "🌱 Ingesting fresh historical data from J-Quants API (past 250 trading days, approx. 4,000 stocks)..."
+          npx tsx batch/init_historical.ts --clean --remote
+          echo "🎉 Remote D1 Clean Full Reset and Ingestion completed successfully!"

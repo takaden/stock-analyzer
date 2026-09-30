@@ -1,6 +1,7 @@
 import type { StockData, EquityMaster, FinSummary, TopixBar, BetaAnalysis } from '../types/jquants';
 
-const CACHE_PREFIX = 'jq_stock_v2_';
+const CACHE_PREFIX = 'jq_stock_v3_';
+const LEGACY_CACHE_PREFIXES = ['jq_stock_v1_', 'jq_stock_v2_'];
 const FINS_PREFIX = 'jq_fins_v1_';
 const BETA_PREFIX = 'jq_beta_v1_';
 const API_KEY_STORAGE = 'jq_api_key';
@@ -11,6 +12,22 @@ const FINS_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
 const BETA_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
 const MASTER_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
 const TOPIX_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
+
+// 旧バージョンキャッシュの自動パージ
+if (typeof localStorage !== 'undefined') {
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && LEGACY_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  } catch (e) {
+    console.warn('Failed to purge legacy cache keys', e);
+  }
+}
 
 // --- インメモリキャッシュ (Level 1: 0ms・JSONパースなし) ---
 const memoryStockCache = new Map<string, CacheEntry<StockData>>();

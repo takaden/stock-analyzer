@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import {
   fetchAllMasters,
   fetchLatestTradingDate,
@@ -7,7 +8,6 @@ import {
   fetchValuationsByDate,
   fetchFinsByDate,
   fetchTopixBars,
-  sleep,
 } from './lib/jquantsClient';
 import { buildCalculatedMetricsRow } from './lib/metricsCalculator';
 import { escapeSql } from './lib/sqlUtils';
@@ -20,9 +20,20 @@ if (!fs.existsSync(CACHE_DIR)) {
 }
 
 async function main() {
-  console.log('🚀 Starting Initial Historical Data Ingestion for D1...');
+  console.log('🚀 Starting Full Seed Generation / Historical Ingestion for D1...');
+
+  // コマンドライン引数判定
+  const isClean = process.argv.includes('--clean') || process.argv.includes('--fresh');
+  const isRemote = process.argv.includes('--remote') || process.env.D1_ENV === 'remote';
+  const isLocal = process.argv.includes('--local');
+  const targetFlag = isRemote ? '--remote' : isLocal ? '--local' : null;
+
+  if (isClean) {
+    console.log('🧹 Clean mode requested: ignoring local cache and fetching fresh data from J-Quants API.');
+  }
 
   // 1. 全銘柄マスター取得
+  console.log('📡 Fetching equities master...');
   const masters = await fetchAllMasters();
   // 普通株 (ProdCat === '011') のみ対象 (ETF等除外)
   const commonStocks = masters.filter((m) => m.ProdCat === '011');
@@ -33,6 +44,7 @@ async function main() {
   console.log(`📅 Latest Trading Date: ${latestDate}, Prev Date: ${prevDate}`);
 
   // 3. 最新日足・前日日足・バリュエーションを一括取得
+  console.log('📡 Fetching daily bars and valuations for latest trading date...');
   const [latestBars, prevBars, valuations] = await Promise.all([
     fetchDailyBarsByDate(latestDate),
     fetchDailyBarsByDate(prevDate),
@@ -50,35 +62,37 @@ async function main() {
   valuations.forEach((v) => valMap.set(v.Code, v));
 
   // TOPIX 日足取得
+  console.log('📡 Fetching TOPIX bars...');
   const topixBars = await fetchTopixBars();
   console.log(`✅ Fetched ${topixBars.length} TOPIX bars for beta calculation.`);
 
   // 4. 過去250営業日の決算開示（/fins/summary?date=...）を収集
-  // TOPIX日足の日付リストを営業日カレンダーとして利用（過去約250営業日）
   const tradingDates = topixBars.map((b) => b.Date).filter((d) => d <= latestDate);
-  // 直近1年分（約250日）
   const targetDates = tradingDates.slice(-250);
-  console.log(`📅 Target disclosure dates to collect: ${targetDates.length} trading days.`);
+  console.log(`📅 Target disclosure dates to collect: ${targetDates.length} trading days (from ${targetDates[0]} to ${targetDates[targetDates.length - 1]}).`);
 
   const finsCachePath = path.join(CACHE_DIR, 'all_fins_cache.json');
-  let finsByCode: Record<string, FinSummary[]> = {};
-  if (fs.existsSync(finsCachePath)) {
-    try {
-      finsByCode = JSON.parse(fs.readFileSync(finsCachePath, 'utf-8'));
-      console.log(`💾 Loaded existing fins cache for ${Object.keys(finsByCode).length} codes.`);
-    } catch (e) {
-      console.warn('Failed to parse existing fins cache:', e);
-    }
-  }
-
   const processedDatesPath = path.join(CACHE_DIR, 'processed_dates.json');
+
+  let finsByCode: Record<string, FinSummary[]> = {};
   let processedDates: Set<string> = new Set();
-  if (fs.existsSync(processedDatesPath)) {
-    try {
-      processedDates = new Set(JSON.parse(fs.readFileSync(processedDatesPath, 'utf-8')));
-      console.log(`💾 Loaded ${processedDates.size} already processed disclosure dates.`);
-    } catch (e) {
-      console.warn('Failed to parse processed dates:', e);
+
+  if (!isClean) {
+    if (fs.existsSync(finsCachePath)) {
+      try {
+        finsByCode = JSON.parse(fs.readFileSync(finsCachePath, 'utf-8'));
+        console.log(`💾 Loaded existing fins cache for ${Object.keys(finsByCode).length} codes.`);
+      } catch (e) {
+        console.warn('Failed to parse existing fins cache:', e);
+      }
+    }
+    if (fs.existsSync(processedDatesPath)) {
+      try {
+        processedDates = new Set(JSON.parse(fs.readFileSync(processedDatesPath, 'utf-8')));
+        console.log(`💾 Loaded ${processedDates.size} already processed disclosure dates.`);
+      } catch (e) {
+        console.warn('Failed to parse processed dates:', e);
+      }
     }
   }
 
@@ -93,7 +107,6 @@ async function main() {
       dailyFins.forEach((f) => {
         const code4 = f.Code.replace(/0$/, '');
         if (!finsByCode[code4]) finsByCode[code4] = [];
-        // 重複防止 (DiscNo または DiscDate + CurPerType)
         const exists = finsByCode[code4].some(
           (existing) => existing.DiscDate === f.DiscDate && existing.CurPerType === f.CurPerType
         );
@@ -122,9 +135,7 @@ async function main() {
   // 5. SQL INSERT 文の生成
   console.log('📝 Generating SQL statements for D1...');
   const sqlStatements: string[] = [];
-
   const nowStr = new Date().toISOString();
-
   const jpx400CodeSet = new Set(JPX400_UNIVERSE.map((u) => u.code));
 
   // (A) stocks
@@ -186,11 +197,23 @@ async function main() {
     );`);
   }
 
+  // (E) sync_cursors 初期化 (開示同期カーソル)
+  sqlStatements.push(`INSERT INTO sync_cursors (key, value, updated_at) VALUES ('disclosures', ${escapeSql(latestDate)}, ${escapeSql(nowStr)})
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`);
+
   const sqlOutPath = path.resolve('schema/initial_seed.sql');
   fs.writeFileSync(sqlOutPath, sqlStatements.join('\n'), 'utf-8');
   console.log(`🎉 Successfully generated SQL seed file: ${sqlOutPath} (${(fs.statSync(sqlOutPath).size / 1024 / 1024).toFixed(2)} MB)`);
-  console.log('👉 You can execute this file into local D1 with:');
-  console.log('   npx wrangler d1 execute jquants-db --local --file=./schema/initial_seed.sql');
+
+  if (targetFlag) {
+    console.log(`🚀 Executing full seed directly on D1 (${targetFlag})...`);
+    execSync(`npx wrangler d1 execute jquants-db ${targetFlag} --file=${sqlOutPath}`, { stdio: 'inherit' });
+    console.log(`🎉 D1 full seed execution completed successfully (${targetFlag})!`);
+  } else {
+    console.log('👉 You can execute this file into D1 with:');
+    console.log('   npx wrangler d1 execute jquants-db --local --file=./schema/initial_seed.sql');
+    console.log('   npx wrangler d1 execute jquants-db --remote --file=./schema/initial_seed.sql');
+  }
 }
 
 main().catch((err) => {
