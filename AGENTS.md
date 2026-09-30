@@ -213,9 +213,8 @@ npx wrangler d1 execute jquants-db --local --file=schema/initial_seed.sql
 
 # 本番 D1 データベースのフルリセット (真の Clean Full Reset)
 # 推奨: GitHub Actions の "Reset and Seed Cloudflare D1 (Full Reset)" ワークフローを手動実行 (Run workflow)
-# (過去のキャッシュを一切使わず、最新営業日を起点にJ-Quants APIから生データを直接クリーン取得して全銘柄再構築)
-# CLI手動実行 (Cloudflare認証済み環境):
-# npx tsx batch/init_historical.ts --clean --remote
+# (GitHub Actions 側で全テーブルDROP ＋ 最新schema.sql適用 ＋ J-Quants APIからの生データ直接クリーン取得と再構築を一貫実行)
+# ※ CLIの `init_historical.ts --clean` 単体ではテーブル削除・スキーマ適用は行われないため、本番フルリセットは必ず上記Actionsを使用してください。
 
 # J-Quants 実APIとの疎通・データ整合性テスト
 node test/api_verify.mjs

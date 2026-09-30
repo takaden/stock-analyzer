@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   fetchAllMasters,
   fetchLatestTradingDate,
@@ -207,7 +207,10 @@ async function main() {
 
   if (targetFlag) {
     console.log(`🚀 Executing full seed directly on D1 (${targetFlag})...`);
-    execSync(`npx wrangler d1 execute jquants-db ${targetFlag} --file=${sqlOutPath}`, { stdio: 'inherit' });
+    execFileSync('npx', ['wrangler', 'd1', 'execute', 'jquants-db', targetFlag, `--file=${sqlOutPath}`], {
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    });
     console.log(`🎉 D1 full seed execution completed successfully (${targetFlag})!`);
   } else {
     console.log('👉 You can execute this file into D1 with:');

@@ -14,8 +14,8 @@ const MASTER_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
 const TOPIX_TTL_MS = 24 * 60 * 60 * 1000; // 24時間有効
 
 // 旧バージョンキャッシュの自動パージ
-if (typeof localStorage !== 'undefined') {
-  try {
+try {
+  if (typeof localStorage !== 'undefined') {
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -24,9 +24,9 @@ if (typeof localStorage !== 'undefined') {
       }
     }
     keysToRemove.forEach((k) => localStorage.removeItem(k));
-  } catch (e) {
-    console.warn('Failed to purge legacy cache keys', e);
   }
+} catch (e) {
+  console.warn('Failed to purge legacy cache keys', e);
 }
 
 // --- インメモリキャッシュ (Level 1: 0ms・JSONパースなし) ---
