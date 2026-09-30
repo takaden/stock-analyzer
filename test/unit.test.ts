@@ -222,6 +222,62 @@ test('extractDividendHistory', async (t) => {
     assert.equal(streak, 3);
   });
 
+  await t.test('8766 Tokio Marine pattern: adjusts past actual DPS with 1:15 split ratio when latest disclosure lacks ShOutFY and maintains consecutive streak', () => {
+    const tokioMarineFins = [
+      {
+        DiscDate: '2025-05-20',
+        CurPerType: 'FY',
+        CurPerEn: '2025-03-31',
+        DivAnn: '172.0',
+        EPS: '542.16',
+        ShOutFY: '1934000000',
+      },
+      {
+        DiscDate: '2026-05-20',
+        CurPerType: 'FY',
+        CurPerEn: '2026-03-31',
+        DivAnn: '218.0',
+        EPS: '515.55',
+        ShOutFY: '1934000000',
+      },
+      {
+        DiscDate: '2026-08-12',
+        CurPerType: '1Q',
+        CurFYEn: '2027-03-31',
+        CurPerEn: '2026-06-30',
+        FDiv2Q: '122.5',
+        FDivFY: '122.5',
+        FDivAnn: '245.0',
+        FEPS: '441.83',
+        ShOutFY: '1934000000',
+      },
+      {
+        DiscDate: '2026-08-25',
+        CurPerType: 'FY',
+        CurFYEn: '2027-03-31',
+        CurPerEn: '2027-03-31',
+        FDiv2Q: '122.5',
+        FDivFY: '8.17',
+        FDivAnn: '',
+        ShOutFY: '',
+      },
+    ];
+
+    const { history, streak } = extractDividendHistory(tokioMarineFins as any);
+    // 2025, 2026, 2027(予) の3期
+    assert.equal(history.length, 3);
+    assert.equal(history[0].periodLabel, '2025/03期');
+    assert.equal(history[0].dps, 11.47); // 172 / 15 = 11.466... -> 11.47
+    assert.equal(history[1].periodLabel, '2026/03期');
+    assert.equal(history[1].dps, 14.53); // 218 / 15 = 14.533... -> 14.53
+    assert.equal(history[2].periodLabel, '2027/03期(予)');
+    assert.equal(history[2].dps, 16.34);
+    assert.equal(history[2].isForecast, true);
+
+    // 11.47 -> 14.53 -> 16.34 と連続増配が2期カウントされること (大減配誤認で0にならないこと)
+    assert.equal(streak, 2);
+  });
+
   await t.test('handles empty fins gracefully', () => {
     const { history, streak } = extractDividendHistory([]);
     assert.equal(history.length, 0);
@@ -568,6 +624,39 @@ test('extractLatestDps', async (t) => {
     // 現在株価 3,478円 で利回り 2.24% になること
     const yieldCalc = (res.dpsAnnual! / 3478) * 100;
     assert.equal(Math.round(yieldCalc * 100) / 100, 2.24);
+  });
+
+  await t.test('8766 Tokio Marine pattern: reconstructs forecast DPS 16.34 yen from interim FDiv2Q 122.5 yen (split-adjusted with 1:15 ratio to 8.17 yen) + year-end FDivFY 8.17 yen when ShOutFY is empty', () => {
+    // 8766 東京海上ホールディングス: 2026年10月1日付で1:15の株式分割を実施
+    const tokioMarineFins = [
+      {
+        DiscDate: '2026-08-12',
+        CurPerType: '1Q',
+        CurFYEn: '2027-03-31',
+        CurPerEn: '2026-06-30',
+        FDiv2Q: '122.5',
+        FDivFY: '122.5',
+        FDivAnn: '245.0',
+        ShOutFY: '1934000000',
+      },
+      {
+        DiscDate: '2026-08-25',
+        CurPerType: 'FY',
+        CurFYEn: '2027-03-31',
+        CurPerEn: '2027-03-31',
+        FDiv2Q: '122.5', // 分割前基準の中間予想
+        FDivFY: '8.17',  // 1:15分割後基準の期末予想
+        FDivAnn: '',     // 短信上は単純合算不可のため空欄
+        ShOutFY: '',     // 臨時開示のため空欄
+      },
+    ];
+    const res = extractLatestDps(tokioMarineFins as any);
+    // 中間122.5円が1:15換算で8.17円になり、期末8.17円と合算されて16.34円の予想年間配当になること
+    assert.deepEqual(res, { dpsAnnual: 16.34, dpsType: 'forecast' });
+
+    // 権利落ち後株価 523.2円 で適正利回り 3.12% になること (誤計算の25%にならないこと)
+    const yieldCalc = (res.dpsAnnual! / 523.2) * 100;
+    assert.equal(Math.round(yieldCalc * 100) / 100, 3.12);
   });
 
   await t.test('adjusts past actual DivAnn with split ratio when no forecast components exist', () => {
@@ -1092,6 +1181,38 @@ test('extractDividendSchedule (Dividend record months & breakdown)', async (t) =
     assert.equal(res.prevInterimDps, 38.5);
     assert.equal(res.prevYearEndDps, 38.5);
     assert.equal(res.prevAnnualDps, 77);
+  });
+
+  await t.test('8766 Tokio Marine pattern: converts interim DPS with 1:15 ratio to 8.17 yen and aligns with year-end 8.17 yen and annual 16.34 yen', () => {
+    const tokioMarineFins = [
+      {
+        DiscDate: '2026-05-20',
+        CurPerType: 'FY',
+        CurFYEn: '2026-03-31',
+        CurPerEn: '2026-03-31',
+        Div2Q: '105.5',
+        DivFY: '112.5',
+        DivAnn: '218.0',
+        ShOutFY: '1934000000',
+      },
+      {
+        DiscDate: '2026-08-25',
+        CurPerType: 'FY',
+        CurFYEn: '2027-03-31',
+        CurPerEn: '2027-03-31',
+        FDiv2Q: '122.5',
+        FDivFY: '8.17',
+        FDivAnn: '',
+        ShOutFY: '',
+      },
+    ];
+
+    const schedule = extractDividendSchedule(tokioMarineFins as any);
+    assert.ok(schedule !== undefined);
+    assert.equal(schedule.fiscalYearEndMonth, 3);
+    assert.equal(schedule.interimDps, 8.17); // 122.5 / 15 = 8.166... -> 8.17
+    assert.equal(schedule.yearEndDps, 8.17);
+    assert.equal(schedule.annualDps, 16.34);
   });
 
   await t.test('handles annual-only dividend stocks properly (no interim)', () => {
