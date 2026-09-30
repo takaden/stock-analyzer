@@ -211,12 +211,10 @@ npx wrangler d1 execute jquants-db --local --command="DROP VIEW IF EXISTS v_scre
 npx wrangler d1 execute jquants-db --local --file=schema/schema.sql
 npx wrangler d1 execute jquants-db --local --file=schema/initial_seed.sql
 
-# 本番 D1 データベースのフルリセット
+# 本番 D1 データベースのフルリセット (真の Clean Full Reset)
 # 推奨: GitHub Actions の "Reset and Seed Cloudflare D1 (Full Reset)" ワークフローを手動実行 (Run workflow)
-# CLI手動実行 (Cloudflare認証済み環境):
-# npx wrangler d1 execute jquants-db --remote --command="DROP VIEW IF EXISTS v_screener_stocks; DROP VIEW IF EXISTS v_watchlist_summary; DROP TABLE IF EXISTS calculated_metrics; DROP TABLE IF EXISTS valuations; DROP TABLE IF EXISTS daily_quotes; DROP TABLE IF EXISTS stocks; DROP TABLE IF EXISTS financial_disclosures; DROP TABLE IF EXISTS sync_cursors; DROP TABLE IF EXISTS d1_migrations;"
-# npx wrangler d1 execute jquants-db --remote --file=schema/schema.sql
-# npx wrangler d1 execute jquants-db --remote --file=schema/initial_seed.sql
+# (GitHub Actions 側で全テーブルDROP ＋ 最新schema.sql適用 ＋ J-Quants APIからの生データ直接クリーン取得と再構築を一貫実行)
+# ※ CLIの `init_historical.ts --clean` 単体ではテーブル削除・スキーマ適用は行われないため、本番フルリセットは必ず上記Actionsを使用してください。
 
 # J-Quants 実APIとの疎通・データ整合性テスト
 node test/api_verify.mjs
