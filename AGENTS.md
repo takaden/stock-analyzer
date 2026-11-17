@@ -114,13 +114,16 @@ stock-analyzer/
 ├── .nvmrc                     # NVM用 Node.js バージョン指定 (v22)
 ├── .env                       # APIキー環境変数 (Git除外)
 ├── .env.example               # 環境変数テンプレート
+├── .oxlintrc.json             # oxlint 静的解析ルール設定
+├── .coderabbit.yaml           # CodeRabbit レビュー設定
 ├── .github/
 │   └── workflows/
 │       ├── daily_sync.yml     # 平日夜間自動実行 (18:30 JST) GitHub Actions ワークフロー
 │       └── reset_d1.yml       # 手動実行専用 本番 D1 フルリセット (Truncate & Seed) ワークフロー
 ├── schema/
 │   ├── schema.sql             # Cloudflare D1 データベース定義 (stocks, quotes, metrics, views)
-│   └── initial_seed.sql       # 過去250営業日の全上場銘柄初期シードSQL (約6.5MB)
+│   ├── initial_seed.sql       # 過去250営業日の全上場銘柄初期シードSQL (約6.5MB)
+│   └── fix_jpx400.sql         # JPX400 フラグ補修用SQLスクリプト
 ├── batch/                     # 夜間バッチ・データ収集スクリプト群 (TypeScript)
 │   ├── lib/
 │   │   ├── jquantsClient.ts   # レートリミット制御付きJ-Quants APIクライアント
@@ -189,6 +192,9 @@ npm run dev
 
 # 単体テスト実行 (Node.js ネイティブテストランナー)
 npm test
+
+# 静的解析 (oxlint)
+npm run lint
 
 # プロダクションビルド (TypeScript型チェック + Viteバンドル -> dist/)
 npm run build
@@ -321,8 +327,8 @@ node test/api_verify.mjs
   - 初回アクセス時のみ `localStorage` からデシリアライズし、同時にメモリへ保存。
   - 2回目以降の取得（タブ切替、ソート、進捗プログレス更新時など）はメモリキャッシュから同一オブジェクト参照を $O(1)$（約0.0001ms）で即時返却し、冗長な JSON パースとストレージ I/O を完全に排除。
 - **Level 2: localStorage 永続化**:
-  - ページ再読込や次回ブラウザ起動時のためにバックグラウンドで `localStorage` にも永続保存。
-  - 各種 TTL（株価日足: 12時間、財務・ベータ・マスター・TOPIX: 24時間）の有効期限判定および安全ガード（SSR/Nodeテスト環境での `typeof localStorage !== 'undefined'` ガード）を完備。
+  - ページ再読込や次回ブラウザ起動時のためにバックグラウンドで `localStorage` にも永続保存（個別株価キャッシュキーは `jq_stock_v3_` を使用し、旧バージョン `jq_stock_v1_` / `jq_stock_v2_` は起動時に自動パージ）。
+  - 各種 TTL（株価日足: 12時間、財務・ベータ・マスター・TOPIX: 24時間）の有効期限判定および安全ガード（SSR/Nodeテスト環境での `typeof localStorage !== 'undefined'` ガード、および `SecurityError` 耐性）を完備。
 
 ### ⑥ タイポグラフィと金融データ表示最適化 (Inter + Noto Sans JP + tabular-nums)
 - **フォントスタック (`tailwind.config.js`, `index.html`, `src/index.css`)**:
@@ -361,6 +367,6 @@ node test/api_verify.mjs
 
 1. **テクニカル指標の追加**:
    - `indicators.ts` に RSI、MACD、ボリンジャーバンドの計算ロジックを追加し、`StockChart.tsx` のサブペインに描画可能。
-2. **Cloudflare D1 / Workers による完全リアルタイムDB化**:
-   - 定期バッチで全上場銘柄の日足をDBに蓄積し、より高度な複数期間トレンド分析を可能にする。
+2. **D1 履歴データの長期蓄積・複数期間トレンド分析**:
+   - 現在は最新日足・直近財務指標を中心に D1 へ格納しているが、日足履歴を複数年分蓄積することで、より高度な複数期間トレンドスクリーニングを可能にする。
 
